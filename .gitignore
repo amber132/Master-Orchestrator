@@ -60,9 +60,9 @@ _backup_before_migration/
 _patch_*.py
 
 # Root-level throwaway scripts
-test_*.py
-_test_*.py
-test-project/
+/test_*.py
+/_test_*.py
+/test-project/
 
 # Windows oddities
 nul
