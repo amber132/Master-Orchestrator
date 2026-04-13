@@ -1,0 +1,72 @@
+name: "error_policy_demo"
+description: "演示 error_policy 的三种错误处理策略"
+
+tasks:
+  # 任务 1: 使用 continue-on-error 策略
+  # 即使失败也不会阻止下游任务执行
+  fetch_optional_data:
+    prompt_template: |
+      尝试从外部 API 获取可选数据。
+      如果失败，返回空结果即可。
+    error_policy:
+      on_error: "continue-on-error"  # 失败不传播
+      classify_errors: true           # 启用错误分类
+    retry_policy:
+      max_attempts: 2
+      backoff_multiplier: 1.5
+
+  # 任务 2: 依赖任务 1，但由于 continue-on-error，即使任务 1 失败也会执行
+  process_main_data:
+    prompt_template: |
+      处理主要数据。
+      可选数据：{{ fetch_optional_data }}
+    depends_on:
+      - fetch_optional_data
+
+  # 任务 3: 使用 skip-downstream 策略
+  # 失败时会取消所有下游任务
+  validate_critical_input:
+    prompt_template: |
+      验证关键输入数据的完整性。
+      如果验证失败，应该跳过所有后续处理。
+    depends_on:
+      - process_main_data
+    error_policy:
+      on_error: "skip-downstream"  # 失败时取消下游任务
+      classify_errors: true
+
+  # 任务 4: 依赖任务 3，如果任务 3 失败会被取消
+  expensive_computation:
+    prompt_template: |
+      执行昂贵的计算任务。
+      输入数据：{{ validate_critical_input }}
+    depends_on:
+      - validate_critical_input
+    model: "opus"  # 使用昂贵的模型
+
+  # 任务 5: 使用默认的 fail-fast 策略
+  # 失败时会取消下游任务（默认行为）
+  generate_report:
+    prompt_template: |
+      生成最终报告。
+      计算结果：{{ expensive_computation }}
+    depends_on:
+      - expensive_computation
+    # 没有指定 error_policy，默认使用 fail-fast
+
+  # 任务 6: 依赖任务 5
+  send_notification:
+    prompt_template: |
+      发送完成通知。
+      报告：{{ generate_report }}
+    depends_on:
+      - generate_report
+
+# 全局配置
+max_parallel: 2
+
+# 生命周期钩子
+hooks:
+  on_task_start: "echo 'Starting task: $TASK_ID'"
+  on_task_complete: "echo 'Task completed: $TASK_ID'"
+  on_task_fail: "echo 'Task failed: $TASK_ID with status $TASK_STATUS'"

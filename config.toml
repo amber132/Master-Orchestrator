@@ -1,0 +1,60 @@
+# Master Orchestrator — example configuration
+
+[orchestrator]
+max_parallel = 150
+health_check_interval = 60
+
+[claude]
+default_model = "sonnet"
+default_timeout = 1800
+max_budget_usd = 1000.0
+cli_path = "claude"
+budget_enforcement_mode = "accounting"
+
+[codex]
+default_model = "gpt-5.4"
+default_timeout = 1800
+max_budget_usd = 0.0
+budget_enforcement_mode = "accounting"
+cli_path = "codex"
+execution_security_mode = "restricted"
+
+[routing]
+default_provider = "auto"
+auto_fallback = true
+
+[routing.phase_defaults]
+decompose = "claude"
+review = "claude"
+discover = "claude"
+execute = "codex"
+simple = "codex"
+self_improve = "claude"
+requirement = "claude"
+
+[retry]
+max_attempts = 10
+backoff_base = 30.0
+backoff_multiplier = 2.0
+
+[checkpoint]
+db_path = "./orchestrator_state.db"
+
+[workspace]
+enabled = true
+root_dir = "./orchestrator_runs"
+branch_prefix = "master-orchestrator"
+keep_artifacts = true
+
+[simple]
+enabled = true
+default_isolation = "none"
+manifest_dir = "./simple_runs"
+copy_root_dir = "./simple_runs/copies"
+max_pending_tasks = 100000
+max_running_processes = 16
+default_timeout_seconds = 1800
+default_max_attempts = 3
+
+[simple.syntax_checkers]
+".py" = "{python} -m py_compile {target}"

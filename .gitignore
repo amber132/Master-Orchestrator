@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+
+# IDE / editor
+.idea/
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+workflows/__pycache__/
+.omx/
+
+# Runtime state and databases
+orchestrator_state.db
+task_cache.db
+goal_state.json
+self_improve_state.json
+budget_tracker.json
+*.db-shm
+*.db-wal
+*.db.init.lock
+*.lock
+goal_state.lock
+self_improve_state.lock
+
+# Runtime logs and outputs
+logs/
+audit_logs/
+orchestrator_runs/
+simple_runs/
+.orchestrator_spill/
+*.jsonl
+*.log
+orch_output.txt
+orch_test.log
+self_improve_prompt.md
+
+# Generated reports and scratch analysis
+audit_*.md
+audit_*.txt
+audit_reports/
+output_*.txt
+recovery_report.md
+_analysis/
+_*.md
+_test_out.txt
+fix_plan.md
+improvement_proposals.md
+validation_report.md
+
+# Backups and one-off patch helpers
+*.bak
+_backup_before_migration/
+_patch_*.py
+
+# Root-level throwaway scripts
+test_*.py
+_test_*.py
+test-project/
+
+# Windows oddities
+nul

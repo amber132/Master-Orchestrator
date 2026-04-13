@@ -1,0 +1,250 @@
+# 高级功能示例工作流
+# 演示场景：数据处理流水线 - 从多个源获取数据、处理、聚合、生成报告
+# 涵盖功能：links（数据链接）、loop（循环）、error_policy（错误策略）、transform（字段转换）、condition（条件执行）
+#
+# 运行命令：claude-orchestrator run workflows/example_advanced.toml
+
+[meta]
+name = "advanced_data_pipeline"
+max_parallel = 3
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 任务 1：获取数据源列表（演示 loop + error_policy）
+# ═══════════════════════════════════════════════════════════════════════════════
+[tasks.fetch_data_sources]
+prompt = """
+模拟从 API 获取数据源列表。
+返回 JSON 格式：
+{
+    "success": true,
+    "sources": [
+        {"id": "source_1", "name": "用户数据", "url": "https://api.example.com/users"},
+        {"id": "source_2", "name": "订单数据", "url": "https://api.example.com/orders"},
+        {"id": "source_3", "name": "产品数据", "url": "https://api.example.com/products"}
+    ],
+    "timestamp": "2026-02-16T10:00:00Z"
+}
+
+如果模拟失败（随机），返回：{"success": false, "error": "网络超时"}
+"""
+model = "haiku"
+timeout = 60
+
+# ── loop 配置：循环重试机制 ──
+# 最多重试 5 次，直到 success 为 true
+[tasks.fetch_data_sources.loop]
+max_iterations = 5
+until_condition = "outputs.get('fetch_data_sources', {}).get('success') == True"
+retry_on_failure = true  # 失败时自动重试
+
+# ── error_policy 配置：错误处理策略 ──
+# 如果所有重试都失败，继续执行下游任务（使用空数据）
+[tasks.fetch_data_sources.error_policy]
+on_error = "continue-on-error"  # 选项：'fail-fast' | 'continue-on-error' | 'skip-downstream'
+classify_errors = true  # 启用智能错误分类（RETRYABLE/NON_RETRYABLE/NEEDS_HUMAN）
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 任务 2：处理第一个数据源（演示 links + transform）
+# ═══════════════════════════════════════════════════════════════════════════════
+[tasks.process_source_1]
+prompt = """
+处理数据源：${source_name}
+数据源 URL：${source_url}
+
+模拟数据处理流程：
+1. 从 URL 获取数据
+2. 清洗和验证
+3. 统计分析
+
+返回 JSON 格式：
+{
+    "source_id": "${source_id}",
+    "records_count": 1250,
+    "valid_records": 1200,
+    "invalid_records": 50,
+    "processing_time_ms": 3500,
+    "status": "completed"
+}
+"""
+depends_on = ["fetch_data_sources"]
+model = "haiku"
+timeout = 120
+
+# ── condition 配置：条件执行 ──
+# 只有当上游任务成功获取到数据源时才执行
+condition = "len(outputs.get('fetch_data_sources', {}).get('sources', [])) > 0"
+
+# ── links 配置：从上游任务提取数据并注入当前任务 ──
+# 从 fetch_data_sources 的输出中提取第一个数据源的信息
+[[tasks.process_source_1.links]]
+upstream_task = "fetch_data_sources"
+output_path = "sources[0].id"  # 支持数组索引语法
+input_key = "source_id"
+
+[[tasks.process_source_1.links]]
+upstream_task = "fetch_data_sources"
+output_path = "sources[0].name"
+input_key = "source_name"
+
+[[tasks.process_source_1.links]]
+upstream_task = "fetch_data_sources"
+output_path = "sources[0].url"
+input_key = "source_url"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 任务 3：处理第二个数据源（演示 links 的复用）
+# ═══════════════════════════════════════════════════════════════════════════════
+[tasks.process_source_2]
+prompt = """
+处理数据源：${source_name}
+数据源 URL：${source_url}
+
+模拟数据处理流程：
+1. 从 URL 获取数据
+2. 清洗和验证
+3. 统计分析
+
+返回 JSON 格式：
+{
+    "source_id": "${source_id}",
+    "records_count": 3400,
+    "valid_records": 3350,
+    "invalid_records": 50,
+    "processing_time_ms": 5200,
+    "status": "completed"
+}
+"""
+depends_on = ["fetch_data_sources"]
+model = "haiku"
+timeout = 120
+
+condition = "len(outputs.get('fetch_data_sources', {}).get('sources', [])) > 1"
+
+# ── links 配置：提取第二个数据源 ──
+[[tasks.process_source_2.links]]
+upstream_task = "fetch_data_sources"
+output_path = "sources[1].id"
+input_key = "source_id"
+
+[[tasks.process_source_2.links]]
+upstream_task = "fetch_data_sources"
+output_path = "sources[1].name"
+input_key = "source_name"
+
+[[tasks.process_source_2.links]]
+upstream_task = "fetch_data_sources"
+output_path = "sources[1].url"
+input_key = "source_url"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 任务 4：聚合结果并生成报告（演示 transform + condition + error_policy）
+# ═══════════════════════════════════════════════════════════════════════════════
+[tasks.generate_report]
+prompt = """
+生成数据处理报告。
+
+数据源总数：${total_sources}
+第一个源处理记录数：${source1_records}
+第一个源有效记录数：${source1_valid}
+第二个源处理记录数：${source2_records}
+第二个源有效记录数：${source2_valid}
+
+请生成一份包含以下内容的 Markdown 报告：
+1. 执行摘要
+2. 数据源概览
+3. 处理统计（总记录数、有效记录数、无效记录数）
+4. 数据质量分析
+5. 建议和后续步骤
+
+返回 JSON 格式：
+{
+    "report_title": "数据处理流水线报告",
+    "generated_at": "2026-02-16T10:30:00Z",
+    "summary": {
+        "total_sources": ${total_sources},
+        "total_records": <计算总和>,
+        "total_valid": <计算总和>,
+        "data_quality_score": <0-100 分数>
+    },
+    "report_markdown": "# 报告内容...",
+    "recommendations": ["建议1", "建议2", "建议3"]
+}
+"""
+depends_on = ["process_source_1", "process_source_2"]
+model = "sonnet"
+timeout = 300
+
+# ── condition 配置：条件执行 ──
+# 只有当至少有一个数据源处理成功时才生成报告
+condition = """
+outputs.get('process_source_1', {}).get('status') == 'completed' or
+outputs.get('process_source_2', {}).get('status') == 'completed'
+"""
+
+# ── transform 配置：字段转换规则 ──
+# 从上游任务的 JSON 输出中提取特定字段，注入到当前任务的 prompt 中
+[[tasks.generate_report.transform]]
+source_path = "fetch_data_sources.sources"  # 任务ID.字段路径
+target_key = "total_sources"
+default = 0  # 如果字段不存在，使用默认值
+
+[[tasks.generate_report.transform]]
+source_path = "process_source_1.records_count"
+target_key = "source1_records"
+default = 0
+
+[[tasks.generate_report.transform]]
+source_path = "process_source_1.valid_records"
+target_key = "source1_valid"
+default = 0
+
+[[tasks.generate_report.transform]]
+source_path = "process_source_2.records_count"
+target_key = "source2_records"
+default = 0
+
+[[tasks.generate_report.transform]]
+source_path = "process_source_2.valid_records"
+target_key = "source2_valid"
+default = 0
+
+# ── error_policy 配置：错误处理策略 ──
+# 如果报告生成失败，不影响整个流水线（已经完成了数据处理）
+[tasks.generate_report.error_policy]
+on_error = "continue-on-error"
+classify_errors = true
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 功能说明总结
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 1. links（数据链接）
+#    - 从上游任务的 JSON 输出中提取字段
+#    - 支持点分路径（如 "sources[0].name"）和数组索引
+#    - 自动注入到下游任务的 prompt 中（使用 ${变量名} 语法）
+#
+# 2. loop（循环执行）
+#    - max_iterations: 最大循环次数
+#    - until_condition: 循环终止条件（Python 表达式）
+#    - retry_on_failure: 失败时是否重试
+#
+# 3. error_policy（错误处理策略）
+#    - on_error: 'fail-fast'（立即失败）| 'continue-on-error'（继续执行）| 'skip-downstream'（跳过下游）
+#    - classify_errors: 启用智能错误分类（RETRYABLE/NON_RETRYABLE/NEEDS_HUMAN）
+#    - error_handler: 自定义错误处理器（命令或脚本路径）
+#
+# 4. transform（字段转换）
+#    - source_path: 源字段路径（支持 "任务ID.字段路径" 语法）
+#    - target_key: 目标变量名（注入到 prompt 中）
+#    - default: 默认值（字段不存在时使用）
+#
+# 5. condition（条件执行）
+#    - Python 表达式，返回 True 时执行任务
+#    - 可以访问 outputs 字典（所有上游任务的输出）
+#    - 支持复杂逻辑（and/or/not、函数调用等）
+#
+# ═══════════════════════════════════════════════════════════════════════════════

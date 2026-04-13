@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "master-orchestrator"
+version = "0.1.0"
+description = "Unified DAG orchestrator for Claude Code and Codex CLI workflows"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+readme = "README.md"
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+master-orchestrator = "master_orchestrator.cli:main"
+mo = "master_orchestrator.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["master_orchestrator*", "claude_orchestrator*", "codex_orchestrator*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

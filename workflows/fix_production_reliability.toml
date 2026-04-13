@@ -1,0 +1,504 @@
+[dag]
+name = "fix-production-reliability"
+max_parallel = 10
+
+# ============================================================
+# Phase 1: P0 关键 Bug 修复（5 个并行任务）
+# ============================================================
+
+[tasks.p0_merged_outputs]
+prompt = """修复 orchestrator.py 中的 NameError bug。
+
+文件: claude_orchestrator/orchestrator.py
+问题: 第 588 行和第 593 行引用了未定义变量 merged_outputs，应替换为同作用域内的 compressed_outputs。
+
+具体修改:
+1. 找到第 588 行 `resolved = resolve_links(task_node, merged_outputs)` 改为 `resolved = resolve_links(task_node, compressed_outputs)`
+2. 找到第 593 行 `transformed = apply_transforms(task_node, merged_outputs)` 改为 `transformed = apply_transforms(task_node, compressed_outputs)`
+
+修改后确认 compressed_outputs 在同一作用域内已定义（应在第 520-549 行的上游输出合并逻辑中）。"""
+model = "sonnet"
+timeout = 120
+
+[tasks.p0_config_discover]
+prompt = """修复 config.toml 不自动发现的问题。
+
+文件: claude_orchestrator/config.py
+问题: load_config(path=None) 在 path 为 None 时直接跳过文件加载，返回纯默认值。
+
+修改 load_config 函数（约第 159 行），在 if path is not None 之前增加自动发现逻辑:
+
+    if path is None:
+        candidates = [
+            Path("config.toml"),
+            Path(__file__).parent.parent / "config.toml",
+        ]
+        env_path = os.environ.get("ORCHESTRATOR_CONFIG")
+        if env_path:
+            candidates.insert(0, Path(env_path))
+        for candidate in candidates:
+            try:
+                if candidate.exists():
+                    path = candidate
+                    logger.info("自动发现配置文件: %s", candidate.resolve())
+                    break
+            except OSError:
+                continue
+
+确保 import os 已存在。"""
+model = "sonnet"
+timeout = 120
+
+[tasks.p0_guardian]
+prompt = """增强 Guardian 的自我守护能力。
+
+文件: claude_orchestrator/guardian.py
+
+1. 在 __init__ 中初始化 self._lock_fd = None
+
+2. 修改 _write_pid 方法（约第 293 行），加文件锁防多实例:
+   def _write_pid(self) -> None:
+       try:
+           self._lock_fd = open(self._pid_file, 'w')
+           if os.name == 'nt':
+               import msvcrt
+               msvcrt.locking(self._lock_fd.fileno(), msvcrt.LK_NBLCK, 1)
+           else:
+               import fcntl
+               fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+           self._lock_fd.write(str(os.getpid()))
+           self._lock_fd.flush()
+       except (OSError, IOError) as e:
+           logger.error("另一个 Guardian 实例已在运行: %s", e)
+           sys.exit(1)
+
+3. 修改 _cleanup_pid 释放锁:
+   def _cleanup_pid(self) -> None:
+       try:
+           if self._lock_fd:
+               self._lock_fd.close()
+               self._lock_fd = None
+           self._pid_file.unlink(missing_ok=True)
+       except OSError:
+           pass
+
+4. 在主循环每次迭代末尾增加自身内存检查:
+   try:
+       import psutil
+       rss_mb = psutil.Process().memory_info().rss / (1024 * 1024)
+       if rss_mb > 500:
+           logger.warning("Guardian 自身内存过高: %.0fMB", rss_mb)
+   except Exception:
+       pass"""
+model = "sonnet"
+timeout = 180
+
+[tasks.p0_ratelimiter]
+prompt = """修复限流器 429 退避状态不持久化。
+
+文件: claude_orchestrator/rate_limiter.py
+
+修改 1 - get_state 方法（约第 173 行），在返回 dict 中增加两个字段:
+                'backoff_until': self._backoff_until,
+                'backoff_consecutive': self._backoff_consecutive,
+
+修改 2 - restore_state 方法（约第 187 行），在末尾增加:
+            if 'backoff_until' in state:
+                saved_until = float(state['backoff_until'])
+                if saved_until > time.time():
+                    self._backoff_until = saved_until
+                else:
+                    self._backoff_until = 0.0
+            if 'backoff_consecutive' in state:
+                self._backoff_consecutive = int(state['backoff_consecutive'])
+
+确保 import time 已存在。"""
+model = "sonnet"
+timeout = 120
+
+[tasks.p0_shutdown]
+prompt = """修复优雅关闭的竞态条件。
+
+文件 1: claude_orchestrator/orchestrator.py
+在 _execute_loop 方法中做两处修改:
+
+A - 在 ready = self._scheduler.get_ready_tasks(...) 之前加判断:
+                if shutdown_manager and not shutdown_manager.is_accepting():
+                    ready = []
+                else:
+                    ready = self._scheduler.get_ready_tasks(self._outputs)
+
+B - 在 future = self._pool.submit(...) 处包 try-except:
+                        try:
+                            future = self._pool.submit(
+                                self._run_task_with_retry,
+                                task_node, prompt, shutdown_manager,
+                            )
+                            futures[future] = task_node.id
+                        except RuntimeError:
+                            logger.warning("任务 '%s' 提交被拒绝（线程池已关闭）", task_node.id)
+                            self._scheduler.mark_completed(task_node.id, TaskStatus.PENDING)
+                            break
+
+文件 2: claude_orchestrator/graceful_shutdown.py
+在 shutdown 方法中 stop_accepting() 后加 time.sleep(0.5) drain 屏障。
+确保 import time 已存在。
+
+检查是否有 is_accepting() 方法，没有则添加:
+    def is_accepting(self) -> bool:
+        with self._lock:
+            return self._accepting"""
+model = "sonnet"
+timeout = 180
+
+# ============================================================
+# Phase 2: P1 重要缺陷修复（8 个并行任务）
+# ============================================================
+
+[tasks.p1_adaptive_pool]
+prompt = """修复 AdaptiveThreadPool 的多个并发问题。
+
+文件: claude_orchestrator/adaptive_pool.py
+
+问题 1 - _adjuster 死锁: 持锁调用 _add_worker 而后者也获取锁。
+修复: 重写 _adjuster，将 _add_worker 调用移到锁外:
+    def _adjuster(self):
+        while not self.shutdown_flag:
+            time.sleep(self.adjust_interval)
+            if self.shutdown_flag:
+                break
+            workers_to_add = 0
+            with self.lock:
+                current_workers = self.current_workers
+                pending_tasks = self.task_queue.qsize()
+                active_workers = self.active_count
+                if current_workers < self.min_workers:
+                    workers_to_add = self.min_workers - current_workers
+                    self.target_workers = max(self.target_workers, self.min_workers)
+                elif pending_tasks > 0 and (active_workers == 0 or pending_tasks / max(active_workers, 1) > 2):
+                    if current_workers < self.max_workers:
+                        new_workers = max(1, int(current_workers * 0.25))
+                        new_workers = min(new_workers, self.max_workers - current_workers)
+                        self.target_workers = current_workers + new_workers
+                        workers_to_add = new_workers
+                elif current_workers > 0 and active_workers / max(current_workers, 1) < 0.3:
+                    if current_workers > self.min_workers:
+                        remove_workers = max(1, int(current_workers * 0.25))
+                        remove_workers = min(remove_workers, current_workers - self.min_workers)
+                        self.target_workers = current_workers - remove_workers
+            for _ in range(workers_to_add):
+                self._add_worker()
+
+问题 2 - submit 闭包 bug: lambda 捕获引用。改为默认参数绑定:
+    def submit(self, fn, *args, **kwargs):
+        with self.lock:
+            if self.shutdown_flag or not self._accepting:
+                raise RuntimeError("线程池已关闭，无法提交新任务")
+        future = Future()
+        def task(_fn=fn, _args=args, _kwargs=kwargs):
+            return _fn(*_args, **_kwargs)
+        self.task_queue.put((task, future))
+        return future
+
+问题 3 - shutdown 不等 worker: __init__ 加 self._workers = []，_add_worker 中 worker.start() 后加 self._workers.append(worker)，shutdown 中 join 后加 for w in self._workers: w.join(timeout=5)
+
+问题 4 - metrics 类型: Dict[str, int] 改 Dict[str, Any]"""
+depends_on = ["p0_merged_outputs", "p0_shutdown"]
+model = "sonnet"
+timeout = 300
+
+[tasks.p1_cycle_detect]
+prompt = """在 Scheduler 中添加 DAG 循环依赖检测。
+
+文件: claude_orchestrator/scheduler.py
+
+在 __init__ 末尾（self._lock 初始化后）添加 self._detect_cycles() 调用，并添加方法:
+
+    def _detect_cycles(self) -> None:
+        in_degree = {}
+        for tid, task in self._dag.tasks.items():
+            in_degree.setdefault(tid, 0)
+            for dep in task.depends_on:
+                if dep in self._dag.tasks:
+                    in_degree[tid] = in_degree.get(tid, 0) + 1
+        queue_list = [tid for tid, deg in in_degree.items() if deg == 0]
+        visited = 0
+        while queue_list:
+            node = queue_list.pop(0)
+            visited += 1
+            for tid, task in self._dag.tasks.items():
+                if node in task.depends_on:
+                    in_degree[tid] -= 1
+                    if in_degree[tid] == 0:
+                        queue_list.append(tid)
+        if visited < len(self._dag.tasks):
+            cycle_tasks = [tid for tid, deg in in_degree.items() if deg > 0]
+            raise ValueError(f"DAG 存在循环依赖: {cycle_tasks[:10]}")"""
+model = "sonnet"
+timeout = 180
+
+[tasks.p1_decomposer_retry]
+prompt = """为 GoalDecomposer.decompose() 添加重试。
+
+文件: claude_orchestrator/goal_decomposer.py
+
+找到 decompose 方法，将核心逻辑包在重试循环中。在方法体开头加:
+    max_retries = 3
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+
+原有代码缩进一层进入 try 块。在原有 return 后加:
+        except (RuntimeError, json.JSONDecodeError, KeyError, ValueError) as e:
+            last_error = e
+            logger.warning("目标分解第 %d/%d 次失败: %s", attempt, max_retries, e)
+            if attempt < max_retries:
+                import time as _time
+                _time.sleep(min(5 * attempt, 15))
+                continue
+    raise RuntimeError(f"目标分解 {max_retries} 次尝试后失败: {last_error}")"""
+model = "sonnet"
+timeout = 180
+
+[tasks.p1_sqlite]
+prompt = """优化 Store SQLite 并发性能。
+
+文件: claude_orchestrator/store.py
+
+1. 约第 141 行 sqlite3.connect 加 timeout=30
+2. 约第 150 行 PRAGMA synchronous 后加: self._conn.execute("PRAGMA busy_timeout=5000")
+3. __init__ 中加: self._write_count = 0
+4. 添加方法:
+    def _maybe_checkpoint(self):
+        self._write_count += 1
+        if self._write_count >= 300:
+            self._write_count = 0
+            try:
+                self._conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            except Exception as e:
+                logger.warning("WAL checkpoint 失败: %s", e)
+5. close 改为:
+    def close(self):
+        try:
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass
+        self._conn.close()
+6. 所有 self._conn.commit() 后加 self._maybe_checkpoint()"""
+model = "sonnet"
+timeout = 240
+
+[tasks.p1_budget]
+prompt = """修复 BudgetTracker 不跨崩溃持久化。
+
+文件 1: claude_orchestrator/claude_cli.py
+找到 BudgetTracker 类，如果没有 add_cost 方法则添加:
+    def add_cost(self, amount: float) -> None:
+        with self._lock:
+            self.spent += amount
+
+文件 2: claude_orchestrator/orchestrator.py
+找到 resume 方法，在恢复 task_results 后添加:
+        total_spent = 0.0
+        for tid, result in saved_results.items():
+            cost = 0.0
+            if hasattr(result, 'cost_usd') and result.cost_usd:
+                cost = float(result.cost_usd)
+            elif isinstance(result, dict):
+                cost = float(result.get('cost_usd', 0))
+            total_spent += cost
+        if total_spent > 0 and hasattr(self, '_budget_tracker'):
+            self._budget_tracker.add_cost(total_spent)
+            logger.info("恢复已花费预算: $%.4f", total_spent)"""
+depends_on = ["p0_merged_outputs"]
+model = "sonnet"
+timeout = 180
+
+[tasks.p1_head403]
+prompt = """修复 external_source.py HEAD 403 误判。
+
+文件: claude_orchestrator/external_source.py
+
+找到约第 68-71 行:
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 404, 410, 429, 451):
+            logger.info("URL 不可达 (HTTP %d): %s", e.code, url)
+            return ""
+
+改为:
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410, 451):
+            logger.info("URL 不可达 (HTTP %d): %s", e.code, url)
+            return ""
+        elif e.code == 429:
+            logger.info("URL 限流 (429)，等待后尝试 GET: %s", url)
+            time.sleep(2)
+        elif e.code == 403:
+            logger.debug("HEAD 返回 403，继续尝试 GET: %s", url)
+
+确保 import time 在文件顶部。"""
+model = "sonnet"
+timeout = 120
+
+[tasks.p1_backpressure]
+prompt = """修复背压执行路径缺少错误处理。
+
+文件: claude_orchestrator/orchestrator.py
+
+找到背压内联执行代码（搜索 pending_count 或 queue_capacity 或 背压），将执行包在 try-except:
+                    try:
+                        result = self._run_task_with_retry(task_node, prompt, shutdown_manager)
+                    except Exception as e:
+                        logger.error("背压执行异常: %s", e)
+                        result = TaskResult(
+                            task_id=task_node.id,
+                            status=TaskStatus.FAILED,
+                            error=f"背压执行失败: {e}",
+                            finished_at=datetime.now(),
+                        )
+                    self._handle_result(result)"""
+depends_on = ["p0_merged_outputs"]
+model = "sonnet"
+timeout = 120
+
+# ============================================================
+# Phase 3: P2 健壮性改进（7 个并行任务）
+# ============================================================
+
+[tasks.p2_context_cache]
+prompt = """为 _context_cache 添加 LRU 淘汰。
+
+文件: claude_orchestrator/orchestrator.py
+
+1. 约第 110 行: self._context_cache: OrderedDict[str, Any] = OrderedDict()
+   确保 from collections import OrderedDict 已存在
+2. 约第 1250 行 _handle_result 中: 将 self._context_cache[result.task_id] = result.parsed_output 改为 self._lru_set(self._context_cache, result.task_id, result.parsed_output, max_size=self._lru_max_outputs)
+3. 约第 361 行 resume 中: 将 self._context_cache[key] = json.loads(value_json) 改为 self._lru_set(self._context_cache, key, json.loads(value_json), max_size=self._lru_max_outputs)"""
+depends_on = ["p1_adaptive_pool"]
+model = "sonnet"
+timeout = 120
+
+[tasks.p2_ddg_interval]
+prompt = """为 DuckDuckGo 搜索添加请求间隔。
+
+文件: claude_orchestrator/discover.py
+
+找到 WebSearchChannel.search 方法（约第 303 行），在 for 循环中 _search_one 调用前添加:
+        if query_count > 0:
+            delay = random.uniform(2.0, 4.0)
+            logger.debug("DuckDuckGo 请求间隔 %.1fs", delay)
+            time.sleep(delay)
+
+确保文件顶部有 import random 和 import time。"""
+model = "sonnet"
+timeout = 120
+
+[tasks.p2_review_truncate]
+prompt = """提升审查引擎输出截断阈值。
+
+文件: claude_orchestrator/review_engine.py
+
+1. __init__ 中添加: self._output_truncate_chars = 4000
+2. _build_review_prompt 中（约第 271 行）将 output[:1000] 改为:
+        if isinstance(output, str):
+            text = output[:self._output_truncate_chars]
+            if len(output) > self._output_truncate_chars:
+                text += f"\\n... [截断，原始 {len(output)} 字符]"
+        else:
+            text_repr = repr(output)
+            text = text_repr[:self._output_truncate_chars]
+            if len(text_repr) > self._output_truncate_chars:
+                text += f"\\n... [截断，原始 {len(text_repr)} 字符]"
+"""
+model = "sonnet"
+timeout = 120
+
+[tasks.p2_dag_parallel]
+prompt = """修复 DAGGenerator max_parallel 硬编码。
+
+文件 1: claude_orchestrator/dag_generator.py
+__init__ 添加 max_parallel 参数（默认 200），保留已有参数。
+第 54 行和第 103 行 max_parallel=30 改为 max_parallel=self._max_parallel
+
+文件 2: claude_orchestrator/autonomous.py
+DAGGenerator 构造调用添加 max_parallel=config.orchestrator.max_parallel if config else 200"""
+model = "sonnet"
+timeout = 120
+
+[tasks.p2_diag_rotate]
+prompt = """为 diagnostics.jsonl 添加日志轮转。
+
+文件: claude_orchestrator/autonomous.py
+
+找到 _save_state 中写入 diagnostics.jsonl 的代码（约第 211 行），在 open() 之前添加:
+        _DIAG_MAX = 10 * 1024 * 1024
+        if diagnostics_path.exists():
+            try:
+                if diagnostics_path.stat().st_size > _DIAG_MAX:
+                    old_path = diagnostics_path.with_suffix('.jsonl.old')
+                    if old_path.exists():
+                        old_path.unlink()
+                    diagnostics_path.rename(old_path)
+                    logger.info("诊断日志轮转 (>10MB)")
+            except Exception as e:
+                logger.warning("诊断日志轮转失败: %s", e)"""
+model = "sonnet"
+timeout = 120
+
+[tasks.p2_notify_safety]
+prompt = """修复通知管理器线程安全。
+
+文件: claude_orchestrator/notification.py
+
+添加 _should_dedup_unlocked 方法:
+    def _should_dedup_unlocked(self, title):
+        last_sent = self._recent_alerts.get(title)
+        if last_sent and (time.time() - last_sent) < self._dedup_window:
+            return True
+        return False
+
+重写 warning:
+    def warning(self, title, **details):
+        with self._lock:
+            if self._should_dedup_unlocked(title):
+                return
+            self._recent_alerts[title] = time.time()
+            self._active_alerts.add(title)
+        self._send(AlertLevel.WARNING, title, details)
+
+重写 critical:
+    def critical(self, title, **details):
+        with self._lock:
+            if self._should_dedup_unlocked(title):
+                return
+            self._recent_alerts[title] = time.time()
+            self._active_alerts.add(title)
+        self._send(AlertLevel.CRITICAL, title, details)
+
+重写 resolve:
+    def resolve(self, title):
+        with self._lock:
+            if title not in self._active_alerts:
+                return
+            self._active_alerts.discard(title)
+            self._recent_alerts.pop(title, None)
+        self.info(f"{title} - 已恢复", message="告警已自动恢复")"""
+model = "sonnet"
+timeout = 120
+
+[tasks.p2_config_values]
+prompt = """调整 config.toml 为生产安全值。
+
+文件: config.toml（项目根目录）
+
+1. max_attempts = 80 改为 max_attempts = 10
+2. max_budget_usd = 500000000.0 改为 max_budget_usd = 100.0
+3. max_parallel = 200 改为 max_parallel = 30
+
+在文件顶部添加注释:
+# === 生产环境配置 ===
+# max_parallel=30 匹配 Claude API 并发限制
+# max_budget_usd=100 单次运行预算上限
+# max_attempts=10 单任务最大重试次数"""
+model = "sonnet"
+timeout = 60

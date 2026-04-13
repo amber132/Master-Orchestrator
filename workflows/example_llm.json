@@ -1,0 +1,41 @@
+{
+  "name": "example_llm_workflow",
+  "description": "Example workflow in LLM-friendly JSON format",
+  "tasks": [
+    {
+      "id": "analyze",
+      "instruction": "Analyze the codebase structure and identify key components",
+      "inputs": [],
+      "outputs": ["refactor", "document"]
+    },
+    {
+      "id": "refactor",
+      "instruction": "Refactor the identified components based on analysis results",
+      "inputs": ["analyze"],
+      "outputs": ["test"]
+    },
+    {
+      "id": "document",
+      "instruction": "Generate documentation for the analyzed components",
+      "inputs": ["analyze"],
+      "outputs": ["review"]
+    },
+    {
+      "id": "test",
+      "instruction": "Run tests to verify refactored code works correctly",
+      "inputs": ["refactor"],
+      "outputs": ["review"],
+      "loop": {
+        "max_iterations": 3,
+        "until_condition": "all_tests_pass == true",
+        "retry_on_failure": true
+      }
+    },
+    {
+      "id": "review",
+      "instruction": "Review all changes and generate summary report",
+      "inputs": ["document", "test"],
+      "outputs": []
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[dag]
+name = "backward-compat-test"
+max_parallel = 2
+
+[tasks.task1]
+prompt = "Echo test task 1"
+model = "haiku"
+timeout = 60
+
+[tasks.task2]
+prompt = "Echo test task 2"
+depends_on = ["task1"]
+model = "haiku"
+timeout = 60

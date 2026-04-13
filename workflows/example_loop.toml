@@ -1,0 +1,60 @@
+# 示例：使用任务循环功能
+# 演示如何配置任务循环执行，直到满足特定条件或达到最大迭代次数
+
+[dag]
+name = "example_loop_workflow"
+max_parallel = 2
+
+# 示例 1：简单循环 - 固定迭代次数
+[tasks.retry_api_call]
+prompt = """
+尝试调用外部 API 获取数据。
+如果失败，返回 JSON: {"success": false, "retry": true}
+如果成功，返回 JSON: {"success": true, "data": {...}}
+"""
+model = "haiku"
+timeout = 60
+
+[tasks.retry_api_call.loop]
+max_iterations = 5  # 最多重试 5 次
+until_condition = ""  # 空条件表示总是循环直到达到最大次数
+
+# 示例 2：条件循环 - 检查输出结果
+[tasks.check_build_status]
+prompt = """
+检查构建状态。
+返回 JSON: {"status": "pending" | "running" | "success" | "failed"}
+"""
+model = "haiku"
+timeout = 30
+
+[tasks.check_build_status.loop]
+max_iterations = 10  # 最多检查 10 次
+until_condition = "outputs.get('check_build_status', {}).get('status') in ['success', 'failed']"  # 直到构建完成或失败
+
+# 示例 3：复杂条件循环 - 检查多个字段
+[tasks.wait_for_convergence]
+prompt = """
+检查系统是否收敛。
+返回 JSON: {
+    "iteration": <当前迭代次数>,
+    "error_rate": <错误率>,
+    "converged": <是否收敛>
+}
+"""
+model = "sonnet"
+timeout = 120
+
+[tasks.wait_for_convergence.loop]
+max_iterations = 20
+until_condition = "outputs.get('wait_for_convergence', {}).get('converged') == True or outputs.get('wait_for_convergence', {}).get('error_rate', 1.0) < 0.01"
+
+# 示例 4：依赖循环任务的下游任务
+[tasks.process_final_result]
+prompt = """
+处理最终结果。
+输入数据来自上游循环任务的最后一次迭代输出。
+"""
+depends_on = ["wait_for_convergence"]
+model = "sonnet"
+timeout = 300

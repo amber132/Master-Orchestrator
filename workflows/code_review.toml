@@ -1,0 +1,64 @@
+# Example DAG: Code review pipeline
+# Run with: python -m claude_orchestrator run workflows/code_review.toml
+
+[meta]
+name = "code-review-pipeline"
+max_parallel = 3
+
+[meta.retry]
+max_attempts = 2
+backoff_base = 15.0
+
+# ── Tasks ──
+
+[tasks.analyze_structure]
+prompt = """Analyze the project structure in the current directory.
+List all source files, their purposes, and the overall architecture.
+Return JSON: {"files": [{"path": "...", "purpose": "..."}], "architecture": "..."}"""
+timeout = 120
+output_format = "json"
+
+[tasks.find_bugs]
+prompt = """Review the codebase for potential bugs and issues.
+Focus on: null pointer risks, race conditions, resource leaks, error handling gaps.
+Project structure: ${analyze_structure.output}
+Return JSON: {"bugs": [{"file": "...", "line": 0, "severity": "high|medium|low", "description": "..."}]}"""
+depends_on = ["analyze_structure"]
+timeout = 300
+output_format = "json"
+
+[tasks.check_security]
+prompt = """Perform a security review of the codebase.
+Check for: hardcoded secrets, SQL injection, XSS, insecure dependencies, auth issues.
+Project structure: ${analyze_structure.output}
+Return JSON: {"issues": [{"file": "...", "severity": "critical|high|medium|low", "type": "...", "description": "..."}]}"""
+depends_on = ["analyze_structure"]
+timeout = 300
+output_format = "json"
+
+[tasks.suggest_improvements]
+prompt = """Suggest code quality improvements for the codebase.
+Consider: readability, maintainability, performance, testing, documentation.
+Project structure: ${analyze_structure.output}
+Return JSON: {"suggestions": [{"file": "...", "category": "...", "description": "...", "priority": "high|medium|low"}]}"""
+depends_on = ["analyze_structure"]
+timeout = 300
+output_format = "json"
+
+[tasks.generate_report]
+prompt = """Generate a comprehensive code review report combining all findings.
+
+Bug findings: ${find_bugs.output}
+Security issues: ${check_security.output}
+Improvement suggestions: ${suggest_improvements.output}
+
+Create a well-structured markdown report with:
+1. Executive summary
+2. Critical issues (bugs + security)
+3. Improvement recommendations
+4. Priority action items
+
+Return the report as a JSON object: {"report": "...markdown content..."}"""
+depends_on = ["find_bugs", "check_security", "suggest_improvements"]
+timeout = 300
+output_format = "json"
