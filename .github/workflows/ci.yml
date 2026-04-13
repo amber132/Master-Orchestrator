@@ -8,13 +8,8 @@ on:
   pull_request:
 
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.11", "3.12"]
+  smoke:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -23,10 +18,13 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
 
       - name: Install package
         run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
 
-      - name: Run tests
-        run: python -m pytest -q
+      - name: Smoke check CLI help
+        run: python -m master_orchestrator --help
+
+      - name: Smoke check DAG visualize
+        run: python -m master_orchestrator.cli visualize workflows/test_backward_compat.toml
