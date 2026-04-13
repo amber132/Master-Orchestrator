@@ -7,6 +7,9 @@ from codex_orchestrator.model import TaskNode, TaskStatus
 
 
 def test_resolve_windows_native_codex_cli_path_supports_npm_cmd_wrapper(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("codex_orchestrator.codex_cli.os.name", "nt")
+    monkeypatch.setattr("codex_orchestrator.codex_cli.platform.machine", lambda: "AMD64")
+
     npm_dir = tmp_path / "npm"
     npm_dir.mkdir()
     wrapper = npm_dir / "codex.cmd"
@@ -40,6 +43,8 @@ def test_resolve_windows_native_codex_cli_path_falls_back_to_resolved_cmd_wrappe
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr("codex_orchestrator.codex_cli.os.name", "nt")
+
     wrapper = tmp_path / "codex.cmd"
     wrapper.write_text("@ECHO off\nREM wrapper without inline metadata\n", encoding="utf-8")
     monkeypatch.setattr("codex_orchestrator.codex_cli.shutil.which", lambda cli_path: str(wrapper))
