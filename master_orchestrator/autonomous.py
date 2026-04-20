@@ -87,6 +87,7 @@ from .agent_cli import run_agent_task
 from .claude_cli import BudgetTracker, bind_execution_lease_scope, run_claude_task, verify_cli_available
 from .catastrophic_guard import CatastrophicGuard
 from .closure_planner import ClosurePlanner
+from .command_runtime import normalize_python_command
 from .config import Config
 from .convergence import ConvergenceDetector, DeteriorationDetector
 from .dag_generator import DAGGenerator
@@ -3838,9 +3839,10 @@ class AutonomousController:
         def _run_one(cmd_str: str) -> dict:
             """执行单个门禁命令，返回结果 dict。"""
             logger.info("  门禁命令: %s", cmd_str)
+            rendered_command = normalize_python_command(cmd_str)
             try:
                 proc = subprocess.run(
-                    cmd_str,
+                    rendered_command,
                     shell=True,
                     cwd=self._working_dir,
                     capture_output=True,
@@ -3851,7 +3853,7 @@ class AutonomousController:
                 )
                 passed = proc.returncode == 0
                 result = {
-                    "command": cmd_str,
+                    "command": rendered_command,
                     "exit_code": proc.returncode,
                     "stdout": proc.stdout[-2000:] if proc.stdout else "",
                     "stderr": proc.stderr[-2000:] if proc.stderr else "",
@@ -3859,7 +3861,7 @@ class AutonomousController:
                 }
             except subprocess.TimeoutExpired:
                 result = {
-                    "command": cmd_str,
+                    "command": rendered_command,
                     "exit_code": -1,
                     "stdout": "",
                     "stderr": f"命令超时 ({gate.timeout}s)",
@@ -3867,7 +3869,7 @@ class AutonomousController:
                 }
             except Exception as e:
                 result = {
-                    "command": cmd_str,
+                    "command": rendered_command,
                     "exit_code": -1,
                     "stdout": "",
                     "stderr": str(e),

@@ -48,6 +48,7 @@ _BASE_SYSTEM_PROMPT = (
 
 _active_procs: dict[int, subprocess.Popen] = {}  # pid -> Popen
 _active_procs_lock = threading.Lock()
+_HOST_PATH_CLS = type(Path(__file__))
 
 
 @dataclass
@@ -136,7 +137,7 @@ def _resolve_windows_native_codex_cli_path(cli_path: str) -> str:
         return cli_path
 
     resolved = shutil.which(cli_path) or cli_path
-    candidate = Path(resolved).expanduser()
+    candidate = _HOST_PATH_CLS(resolved).expanduser()
     if candidate.suffix.lower() == ".exe" and candidate.exists():
         return str(candidate)
     if candidate.suffix.lower() not in {".cmd", ".bat"} or not candidate.exists():

@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from .backup_manifest import BackupEntry, BackupManifest, BackupResourceType
+from .command_runtime import normalize_python_command
 from .config import BackupConfig
 from .runtime_layout import RuntimeLayout
 from .task_contract import TaskContract
@@ -61,7 +62,7 @@ class BackupGate:
                 raise BackupGateError("涉数据库任务缺少 database_backup_commands 配置")
             for index, command in enumerate(db_commands, start=1):
                 output_path = layout.backups / f"database_backup_{index}.dump"
-                rendered_command = command.format(output=str(output_path))
+                rendered_command = normalize_python_command(command.format(output=str(output_path)))
                 proc = subprocess.run(
                     rendered_command,
                     shell=True,

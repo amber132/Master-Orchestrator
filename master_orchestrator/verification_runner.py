@@ -7,6 +7,7 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 
+from .command_runtime import normalize_python_command
 from .verification_planner import VerificationPlan
 
 logger = logging.getLogger(__name__)
@@ -44,9 +45,10 @@ def _run_command_capture(
     cwd: str | None,
     timeout: int,
 ) -> dict:
+    execution_command = normalize_python_command(command)
     try:
         proc = subprocess.run(
-            command,
+            execution_command,
             shell=True,
             cwd=cwd,
             capture_output=True,
