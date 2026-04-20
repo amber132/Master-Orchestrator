@@ -88,3 +88,17 @@ def test_visualize_uses_ascii_dependency_marker(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert "second <- first" in result.stdout
+
+
+def test_do_at_dag_routes_to_run(tmp_path: Path) -> None:
+    dag_file = tmp_path / "workflow.toml"
+    dag_file.write_text("[dag]\nname='demo'\nmax_parallel=1\n", encoding="utf-8")
+    parser = _build_parser()
+
+    args = parser.parse_args(["do", f"@{dag_file}", "-d", str(tmp_path)])
+
+    resolved = _resolve_command_aliases(args)
+
+    assert resolved.command == "run"
+    assert resolved.dag == str(dag_file)
+    assert resolved.doc == []

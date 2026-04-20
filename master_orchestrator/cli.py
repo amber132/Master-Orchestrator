@@ -768,8 +768,12 @@ def _resolve_command_aliases(args: argparse.Namespace) -> argparse.Namespace:
     target = (getattr(args, "target", "") or "").strip()
     docs = list(getattr(args, "doc", []) or [])
     if target.startswith("@"):
-        docs = [target[1:], *docs]
-        target = ""
+        referenced_target = target[1:].strip()
+        if _looks_like_dag_input(referenced_target, getattr(args, "dir", None)):
+            target = referenced_target
+        else:
+            docs = [referenced_target, *docs]
+            target = ""
 
     if getattr(args, "resume", False) and _has_simple_inputs(args):
         raise ValueError("do --resume 不能与 simple 输入参数组合")
