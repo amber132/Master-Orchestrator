@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from claude_orchestrator.simple_cli import (
     _preflight_simple_provider,
+    _print_simple_json_error,
     _resolve_simple_preflight_provider,
     add_simple_subcommands,
     normalize_multi_value_args,
@@ -110,3 +112,10 @@ def test_preflight_simple_provider_invokes_cli_preflight(monkeypatch, tmp_path: 
     assert captured["work_dir"] == tmp_path.resolve()
     assert captured["provider"] == "codex"
     assert captured["config"] is config
+
+
+def test_print_simple_json_error_formats_payload(capsys) -> None:
+    _print_simple_json_error("status", "No simple runs found.")
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"command": "status", "error": "No simple runs found."}

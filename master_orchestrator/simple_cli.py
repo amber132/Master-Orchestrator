@@ -162,6 +162,10 @@ def _render_simple_control_result(payload: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+def _print_simple_json_error(command: str, error: str) -> None:
+    print(json.dumps({"command": command, "error": error}, ensure_ascii=False, indent=2))
+
+
 def _resolve_simple_preflight_provider(args: argparse.Namespace, config) -> str:
     provider = getattr(args, "provider", "auto")
     if provider in {"claude", "codex"}:
@@ -243,12 +247,18 @@ def run_simple_command(args: argparse.Namespace) -> int:
             if args.simple_command == "status":
                 run = store.get_simple_run(args.run_id) if args.run_id else store.get_latest_simple_run()
                 if run is None:
-                    print("No simple runs found.", file=sys.stderr)
+                    if args.as_json:
+                        _print_simple_json_error("status", "No simple runs found.")
+                    else:
+                        print("No simple runs found.", file=sys.stderr)
                     return 1
                 payload = runner.status_payload(run.run_id)
                 refreshed_run = store.get_simple_run(run.run_id)
                 if refreshed_run is None:
-                    print("No simple runs found.", file=sys.stderr)
+                    if args.as_json:
+                        _print_simple_json_error("status", "No simple runs found.")
+                    else:
+                        print("No simple runs found.", file=sys.stderr)
                     return 1
                 items = store.get_simple_items(refreshed_run.run_id)
                 manifest = store.get_simple_manifest(refreshed_run.run_id)
@@ -302,7 +312,10 @@ def run_simple_command(args: argparse.Namespace) -> int:
                     print(_render_simple_control_result(payload))
                 return 0
         except Exception as exc:
-            print(f"simple {args.simple_command} failed: {exc}", file=sys.stderr)
+            if getattr(args, "as_json", False):
+                _print_simple_json_error(args.simple_command, str(exc))
+            else:
+                print(f"simple {args.simple_command} failed: {exc}", file=sys.stderr)
             return 1
 
     print(f"Unsupported simple command: {args.simple_command}", file=sys.stderr)
