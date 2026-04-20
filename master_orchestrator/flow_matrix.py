@@ -80,11 +80,16 @@ class FlowContext:
 
     def cli_script(self, name: str) -> Path:
         scripts_dir = Path(self.python_executable).resolve().parent
+        repo_local = self.repo_root / name
+        if os.name != "nt" and repo_local.exists():
+            return repo_local
         candidates = [name, f"{name}.exe", f"{name}.cmd", f"{name}.bat"]
         for candidate in candidates:
             path = scripts_dir / candidate
             if path.exists():
                 return path
+        if repo_local.exists():
+            return repo_local
         found = shutil.which(name)
         if found:
             return Path(found)
