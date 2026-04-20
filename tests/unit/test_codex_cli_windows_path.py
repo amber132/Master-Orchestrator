@@ -39,6 +39,35 @@ def test_resolve_windows_native_codex_cli_path_supports_npm_cmd_wrapper(tmp_path
     assert _resolve_windows_native_codex_cli_path("codex") == str(vendor.resolve())
 
 
+def test_resolve_windows_native_codex_cli_path_supports_codex_js_assignment(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("codex_orchestrator.codex_cli.os.name", "nt")
+    monkeypatch.setattr("codex_orchestrator.codex_cli.platform.machine", lambda: "AMD64")
+
+    npm_dir = tmp_path / "npm"
+    npm_dir.mkdir()
+    package_root = npm_dir / "node_modules" / "@openai" / "codex"
+    js_file = package_root / "bin" / "codex.js"
+    js_file.parent.mkdir(parents=True)
+    js_file.write_text("console.log('stub')", encoding="utf-8")
+    wrapper = npm_dir / "codex.cmd"
+    wrapper.write_text(f'@ECHO off\nset CODEX_JS={js_file}\n', encoding="utf-8")
+    vendor = (
+        package_root
+        / "node_modules"
+        / "@openai"
+        / "codex-win32-x64"
+        / "vendor"
+        / "x86_64-pc-windows-msvc"
+        / "codex"
+        / "codex.exe"
+    )
+    vendor.parent.mkdir(parents=True)
+    vendor.write_text("stub", encoding="utf-8")
+    monkeypatch.setattr("codex_orchestrator.codex_cli.shutil.which", lambda cli_path: str(wrapper))
+
+    assert _resolve_windows_native_codex_cli_path("codex") == str(vendor.resolve())
+
+
 def test_resolve_windows_native_codex_cli_path_falls_back_to_resolved_cmd_wrapper(
     tmp_path: Path,
     monkeypatch,

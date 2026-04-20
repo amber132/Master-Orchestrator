@@ -152,7 +152,7 @@ def _resolve_windows_native_codex_cli_path(cli_path: str) -> str:
     match = re.search(r'CODEX_JS=([^"\r\n]+)', wrapper_text)
     if match:
         raw_js_path = match.group(1).strip()
-        js_path = Path(raw_js_path).expanduser()
+        js_path = _HOST_PATH_CLS(raw_js_path).expanduser()
         if not js_path.is_absolute() and raw_js_path.startswith("%dp0%"):
             js_path = candidate.parent / raw_js_path.replace("%dp0%\\", "").replace("%dp0%/", "")
         package_root = js_path.parent.parent
