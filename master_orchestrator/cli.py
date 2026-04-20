@@ -850,11 +850,11 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_self_improve_parser_args(improve_p)
 
     claude_p = sub.add_parser("claude", help=argparse.SUPPRESS)
-    claude_p.add_argument("provider_command", choices=_PROVIDER_COMMAND_CHOICES)
+    claude_p.add_argument("provider_command", choices=[*list(_PROVIDER_COMMAND_CHOICES), "simple"])
     claude_p.add_argument("provider_args", nargs=argparse.REMAINDER)
 
     codex_p = sub.add_parser("codex", help=argparse.SUPPRESS)
-    codex_p.add_argument("provider_command", choices=_PROVIDER_COMMAND_CHOICES)
+    codex_p.add_argument("provider_command", choices=[*list(_PROVIDER_COMMAND_CHOICES), "simple"])
     codex_p.add_argument("provider_args", nargs=argparse.REMAINDER)
 
     # run

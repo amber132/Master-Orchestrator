@@ -116,3 +116,25 @@ def test_runs_json_rejects_action_flags(tmp_path: Path) -> None:
         assert "runs --json 仅支持状态查询" in str(exc)
     else:
         raise AssertionError("expected ValueError for runs --resume --json")
+
+
+def test_provider_alias_accepts_simple_command(tmp_path: Path) -> None:
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("annotate from prompt\n", encoding="utf-8")
+    parser = _build_parser()
+
+    args = parser.parse_args([
+        "codex",
+        "simple",
+        "run",
+        "--prompt-file",
+        str(prompt_file),
+        "-d",
+        str(tmp_path),
+    ])
+
+    resolved = _resolve_command_aliases(args)
+
+    assert resolved.command == "simple"
+    assert resolved.simple_command == "run"
+    assert resolved.provider == "codex"
