@@ -162,12 +162,29 @@ def _render_simple_control_result(payload: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+def _resolve_simple_preflight_provider(args: argparse.Namespace, config) -> str:
+    provider = getattr(args, "provider", "auto")
+    if provider in {"claude", "codex"}:
+        return provider
+    return config.routing.phase_defaults.get("simple", config.routing.default_provider)
+
+
+def _preflight_simple_provider(args: argparse.Namespace, config) -> None:
+    provider = _resolve_simple_preflight_provider(args, config)
+    if provider not in {"claude", "codex"}:
+        return
+    from .cli import _preflight_check
+    _preflight_check(Path(getattr(args, "dir", ".")).resolve(), provider=provider, config=config)
+
+
 def run_simple_command(args: argparse.Namespace) -> int:
     config = load_config(args.config, project_dir=getattr(args, "dir", None))
     provider = getattr(args, "provider", "auto")
     if provider in {"claude", "codex"}:
         config.routing.default_provider = provider
         config.routing.phase_defaults["simple"] = provider
+    if args.simple_command == "run":
+        _preflight_simple_provider(args, config)
     init_notifier(config.notification)
     log_file = None
     if hasattr(args, "log_file") or hasattr(args, "log_dir"):

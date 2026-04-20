@@ -3,7 +3,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from claude_orchestrator.simple_cli import add_simple_subcommands, normalize_multi_value_args, resolve_instruction
+from claude_orchestrator.simple_cli import (
+    _preflight_simple_provider,
+    _resolve_simple_preflight_provider,
+    add_simple_subcommands,
+    normalize_multi_value_args,
+    resolve_instruction,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -53,3 +59,54 @@ def test_simple_reconcile_command_is_registered() -> None:
     assert args.command == "simple"
     assert args.simple_command == "reconcile"
     assert args.run_id == "run-123"
+
+
+def test_resolve_simple_preflight_provider_uses_simple_phase_default() -> None:
+    parser = _build_parser()
+    args = parser.parse_args(["simple", "run", "-d", "/tmp/demo"])
+
+    config = type(
+        "Config",
+        (),
+        {
+            "routing": type(
+                "Routing",
+                (),
+                {"default_provider": "auto", "phase_defaults": {"simple": "codex"}},
+            )()
+        },
+    )()
+
+    assert _resolve_simple_preflight_provider(args, config) == "codex"
+
+
+def test_preflight_simple_provider_invokes_cli_preflight(monkeypatch, tmp_path: Path) -> None:
+    parser = _build_parser()
+    args = parser.parse_args(["simple", "run", "--provider", "codex", "-d", str(tmp_path)])
+
+    config = type(
+        "Config",
+        (),
+        {
+            "routing": type(
+                "Routing",
+                (),
+                {"default_provider": "auto", "phase_defaults": {"simple": "codex"}},
+            )()
+        },
+    )()
+    captured: dict[str, object] = {}
+
+    def fake_preflight(work_dir, *, provider, config):
+        captured["work_dir"] = work_dir
+        captured["provider"] = provider
+        captured["config"] = config
+
+    monkeypatch.setattr("claude_orchestrator.cli._preflight_check", fake_preflight)
+    monkeypatch.setattr("master_orchestrator.cli._preflight_check", fake_preflight)
+
+    _preflight_simple_provider(args, config)
+
+    assert captured["work_dir"] == tmp_path.resolve()
+    assert captured["provider"] == "codex"
+    assert captured["config"] is config
