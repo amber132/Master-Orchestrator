@@ -138,3 +138,23 @@ def test_provider_alias_accepts_simple_command(tmp_path: Path) -> None:
     assert resolved.command == "simple"
     assert resolved.simple_command == "run"
     assert resolved.provider == "codex"
+
+
+def test_provider_alias_accepts_legacy_run_command(tmp_path: Path) -> None:
+    dag_file = tmp_path / "workflow.toml"
+    dag_file.write_text("[dag]\nname='demo'\nmax_parallel=1\n", encoding="utf-8")
+    parser = _build_parser()
+
+    args = parser.parse_args([
+        "codex",
+        "run",
+        str(dag_file),
+        "-d",
+        str(tmp_path),
+    ])
+
+    resolved = _resolve_command_aliases(args)
+
+    assert resolved.command == "run"
+    assert resolved.provider == "codex"
+    assert resolved.dag == str(dag_file)
