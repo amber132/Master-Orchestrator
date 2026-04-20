@@ -102,3 +102,17 @@ def test_do_at_dag_routes_to_run(tmp_path: Path) -> None:
     assert resolved.command == "run"
     assert resolved.dag == str(dag_file)
     assert resolved.doc == []
+
+
+def test_runs_json_rejects_action_flags(tmp_path: Path) -> None:
+    dag_file = tmp_path / "workflow.toml"
+    dag_file.write_text("[dag]\nname='demo'\nmax_parallel=1\n", encoding="utf-8")
+    parser = _build_parser()
+    args = parser.parse_args(["runs", str(dag_file), "--resume", "--json"])
+
+    try:
+        _resolve_command_aliases(args)
+    except ValueError as exc:
+        assert "runs --json 仅支持状态查询" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for runs --resume --json")

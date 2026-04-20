@@ -748,6 +748,8 @@ def _resolve_command_aliases(args: argparse.Namespace) -> argparse.Namespace:
         )
         if action_count > 1:
             raise ValueError("runs 仅允许一个操作标记: --resume、--retry、--graph")
+        if getattr(args, "as_json", False) and action_count:
+            raise ValueError("runs --json 仅支持状态查询，不能与 --resume、--retry、--graph 组合")
         if getattr(args, "resume", False):
             if not getattr(args, "dag", ""):
                 raise ValueError("runs --resume 需要提供 DAG 文件路径")
