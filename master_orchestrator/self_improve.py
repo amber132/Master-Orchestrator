@@ -279,40 +279,58 @@ class SelfImproveController:
         # analyzing 或其他未知状态：从阶段 1 开始
         return 1
 
+    def _preflight_provider(self) -> str:
+        override = self._phase_provider_overrides.get("self_improve")
+        if override in {"claude", "codex"}:
+            return override
+        if self._preferred_provider in {"claude", "codex"}:
+            return self._preferred_provider
+        phase_default = self._config.routing.phase_defaults.get("self_improve", self._config.routing.default_provider)
+        if phase_default in {"claude", "codex"}:
+            return phase_default
+        return "claude"
+
     def _preflight_check(self) -> None:
         """启动前前置校验，失败抛 RuntimeError 含可操作提示。"""
         errors: list[str] = []
+        provider = self._preflight_provider()
+        cli_name = provider
+        install_hint = (
+            "npm install -g @anthropic-ai/claude-code"
+            if provider == "claude"
+            else "npm install -g @openai/codex@latest"
+        )
 
-        # (1) Claude CLI 可用（含认证验证）
-        claude_path = shutil.which("claude")
-        if not claude_path:
+        # (1) provider CLI 可用（含认证验证）
+        cli_path = shutil.which(cli_name)
+        if not cli_path:
             errors.append(
-                "Claude CLI 未找到。请确保 'claude' 命令在 PATH 中。"
-                " 安装方式: npm install -g @anthropic-ai/claude-code"
+                f"{provider} CLI 未找到。请确保 '{cli_name}' 命令在 PATH 中。"
+                f" 安装方式: {install_hint}"
             )
         else:
             # 验证 CLI 实际可用（认证通过等）
             try:
                 verify = subprocess.run(
-                    [claude_path, "--version"],
+                    [cli_path, "--version"],
                     capture_output=True, text=True, timeout=10,
                 )
                 if verify.returncode != 0:
                     errors.append(
-                        f"Claude CLI 认证失败 (exit={verify.returncode})。"
-                        " 请运行 'claude login' 完成认证"
+                        f"{provider} CLI 验证失败 (exit={verify.returncode})。"
+                        f" 请检查安装与认证状态，必要时重新安装: {install_hint}"
                     )
                 else:
-                    logger.debug("preflight: claude CLI 校验通过: %s", verify.stdout.strip())
+                    logger.debug("preflight: %s CLI 校验通过: %s", provider, verify.stdout.strip())
             except subprocess.TimeoutExpired:
                 errors.append(
-                    "Claude CLI 验证超时 (10s)。"
-                    " 可能是 CLI 卡住或网络问题，请手动运行 'claude --version' 确认"
+                    f"{provider} CLI 验证超时 (10s)。"
+                    f" 可能是 CLI 卡住或网络问题，请手动运行 '{cli_name} --version' 确认"
                 )
             except Exception as exc:
                 errors.append(
-                    f"Claude CLI 验证异常: {exc}。"
-                    " 请确认 CLI 安装正确并已认证"
+                    f"{provider} CLI 验证异常: {exc}."
+                    f" 请确认 CLI 安装正确并已认证"
                 )
 
         # (2) orchestrator_dir 存在且可写
@@ -357,8 +375,8 @@ class SelfImproveController:
                 f"前置校验失败（{len(errors)} 项）：{separator}{separator.join(errors)}"
             )
 
-        logger.info("前置校验通过: claude=%s, dir=%s, config=%s",
-                     claude_path, self._orchestrator_dir, config_path)
+        logger.info("前置校验通过: provider=%s, cli=%s, dir=%s, config=%s",
+                     provider, cli_path, self._orchestrator_dir, config_path)
 
     def execute(self) -> SelfImproveState:
         """执行完整的自我迭代流程，支持断点续传。

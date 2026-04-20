@@ -8,6 +8,33 @@ from master_orchestrator.self_improve import SelfImproveController
 from master_orchestrator.store import Store
 
 
+def test_self_improve_preflight_provider_prefers_explicit_provider(tmp_path: Path) -> None:
+    cfg = Config()
+    controller = SelfImproveController(
+        config=cfg,
+        auto_config=AutoConfig(),
+        working_dir=tmp_path / "work",
+        orchestrator_dir=tmp_path,
+        preferred_provider="codex",
+    )
+
+    assert controller._preflight_provider() == "codex"
+
+
+def test_self_improve_preflight_provider_uses_phase_override(tmp_path: Path) -> None:
+    cfg = Config()
+    controller = SelfImproveController(
+        config=cfg,
+        auto_config=AutoConfig(),
+        working_dir=tmp_path / "work",
+        orchestrator_dir=tmp_path,
+        preferred_provider="claude",
+        phase_provider_overrides={"self_improve": "codex"},
+    )
+
+    assert controller._preflight_provider() == "codex"
+
+
 def test_self_improve_phase_execute_passes_provider_preferences(tmp_path: Path, monkeypatch) -> None:
     working_dir = tmp_path / "work"
     orchestrator_dir = tmp_path / "repo"
