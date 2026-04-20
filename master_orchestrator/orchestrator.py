@@ -70,6 +70,7 @@ from .metrics import MetricsCollector, TaskMetrics
 from .guardrail import InputGuardrail, OutputGuardrail
 from .checkpoint import CheckpointManager
 from .audit_log import AuditLogger
+from .command_runtime import normalize_python_command
 
 # 防御性导入：diagnostics 模块在 workspace 副本中可能缺失，
 # 缺少时降级为无诊断模式而非崩溃（这是 0% 成功率的根因之一）
@@ -1553,12 +1554,12 @@ class Orchestrator:
             env["TASK_ID"] = task_id
             env["TASK_STATUS"] = status
 
-            # Windows 下 shlex.split 不能正确处理路径，退化为 shell=True
+            normalized_hook_cmd = normalize_python_command(hook_cmd)
             if sys.platform == 'win32':
-                cmd: str | list[str] = hook_cmd
+                cmd: str | list[str] = normalized_hook_cmd
                 use_shell = True
             else:
-                cmd = shlex.split(hook_cmd)
+                cmd = shlex.split(normalized_hook_cmd)
                 use_shell = False
 
             result = subprocess.run(
