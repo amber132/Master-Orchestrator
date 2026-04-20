@@ -230,6 +230,10 @@ def _resolve_log_file(args: argparse.Namespace) -> str | None:
     return None
 
 
+def _print_json_error(command: str, error: str) -> None:
+    print(json.dumps({"command": command, "error": error}, ensure_ascii=False, indent=2))
+
+
 def _add_log_args(parser: argparse.ArgumentParser) -> None:
     """给子命令统一添加 --log-file 和 --log-dir 参数。"""
     parser.add_argument("--log-file", default=None, help="Path to JSON Lines log file")
@@ -1052,12 +1056,18 @@ def _cmd_status(args: argparse.Namespace) -> int:
         if not run_id:
             info = store.get_latest_run()
             if not info:
-                print("No runs found.", file=sys.stderr)
+                if args.as_json:
+                    _print_json_error("status", "No runs found.")
+                else:
+                    print("No runs found.", file=sys.stderr)
                 return 1
         else:
             info = store.get_run(run_id)
             if not info:
-                print(f"Run '{run_id}' not found.", file=sys.stderr)
+                if args.as_json:
+                    _print_json_error("status", f"Run '{run_id}' not found.")
+                else:
+                    print(f"Run '{run_id}' not found.", file=sys.stderr)
                 return 1
 
         simple_run = store.get_simple_run(info.run_id)

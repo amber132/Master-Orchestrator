@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
 
-from master_orchestrator.cli import _build_parser, _resolve_command_aliases
+from master_orchestrator.cli import _build_parser, _print_json_error, _resolve_command_aliases
 
 
 def test_top_level_help_prefers_master_commands() -> None:
@@ -158,3 +159,10 @@ def test_provider_alias_accepts_legacy_run_command(tmp_path: Path) -> None:
     assert resolved.command == "run"
     assert resolved.provider == "codex"
     assert resolved.dag == str(dag_file)
+
+
+def test_print_json_error_formats_payload(capsys) -> None:
+    _print_json_error("status", "No runs found.")
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"command": "status", "error": "No runs found."}
