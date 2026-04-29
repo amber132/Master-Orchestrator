@@ -57,3 +57,36 @@ execution_security_mode = "trusted_local"
     cfg = load_config(config_path)
 
     assert cfg.codex.execution_security_mode == "trusted_local"
+
+
+def test_load_config_merges_partial_routing_phase_defaults(tmp_path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[routing.phase_defaults]
+execute = "claude"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    cfg = load_config(config_path)
+
+    assert cfg.routing.phase_defaults["execute"] == "claude"
+    assert cfg.routing.phase_defaults["review"] == "claude"
+    assert cfg.routing.phase_defaults["simple"] == "codex"
+
+
+def test_load_config_merges_nested_default_dict_fields(tmp_path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[simple.syntax_checkers]
+".md" = "markdownlint {target}"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    cfg = load_config(config_path)
+
+    assert cfg.simple.syntax_checkers[".py"] == "{python} -m py_compile {target}"
+    assert cfg.simple.syntax_checkers[".md"] == "markdownlint {target}"

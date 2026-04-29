@@ -6,6 +6,7 @@ import logging
 import os
 import tomllib
 import dataclasses
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,7 +21,7 @@ DEFAULT_CLAUDE_MODEL = "sonnet"
 LEGACY_CLAUDE_MODELS = ("opus",)
 SUPPORTED_CLAUDE_MODELS = (DEFAULT_CLAUDE_MODEL, *LEGACY_CLAUDE_MODELS)
 DEFAULT_CODEX_MODEL = "gpt-5.4"
-LEGACY_CODEX_MODELS = ("gpt-5.3-codex",)
+LEGACY_CODEX_MODELS = ("gpt-5.5", "gpt-5.3-codex")
 SUPPORTED_CODEX_MODELS = (DEFAULT_CODEX_MODEL, *LEGACY_CODEX_MODELS)
 
 
@@ -381,13 +382,51 @@ def _dict_to_dataclass(
     unknown_key_mode: str = "ignore",
 ):
     """Map a dict to a dataclass, ignoring unknown keys."""
+    if not isinstance(data, dict):
+        raise TypeError(f"{section_name or cls.__name__} must be a TOML table")
     valid_fields = {f.name for f in dataclasses.fields(cls)}
     unknown_keys = sorted(k for k in data.keys() if k not in valid_fields)
     _handle_unknown_config_keys(section_name or cls.__name__, unknown_keys, unknown_key_mode)
     filtered = {k: v for k, v in data.items() if k in valid_fields}
-    if defaults:
-        return cls(**{**{f.name: getattr(defaults, f.name) for f in dataclasses.fields(cls)}, **filtered})
+    if defaults is not None:
+        values = {f.name: deepcopy(getattr(defaults, f.name)) for f in dataclasses.fields(cls)}
+        for key, value in filtered.items():
+            existing = values.get(key)
+            if isinstance(existing, dict) and isinstance(value, dict):
+                values[key] = {**existing, **value}
+            else:
+                values[key] = value
+        return cls(**values)
     return cls(**filtered)
+
+
+def _apply_config_sections(
+    cfg: Config,
+    raw: dict,
+    *,
+    unknown_key_mode: str,
+) -> None:
+    """Apply TOML sections declared by the Config dataclass."""
+    known_sections = {field.name for field in dataclasses.fields(Config)}
+    unknown_sections = sorted(key for key in raw.keys() if key not in known_sections)
+    _handle_unknown_config_keys("root", unknown_sections, unknown_key_mode)
+
+    for config_field in dataclasses.fields(Config):
+        section_name = config_field.name
+        if section_name not in raw:
+            continue
+        defaults = getattr(cfg, section_name)
+        setattr(
+            cfg,
+            section_name,
+            _dict_to_dataclass(
+                raw[section_name],
+                type(defaults),
+                defaults=defaults,
+                section_name=section_name,
+                unknown_key_mode=unknown_key_mode,
+            ),
+        )
 
 
 def load_config(
@@ -461,206 +500,11 @@ def load_config(
 
             # TOML 数据转换异常处理
             try:
-                known_sections = {field.name for field in dataclasses.fields(Config)}
-                unknown_sections = sorted(key for key in raw.keys() if key not in known_sections)
-                _handle_unknown_config_keys("root", unknown_sections, effective_unknown_key_mode)
-                if "orchestrator" in raw:
-                    cfg.orchestrator = _dict_to_dataclass(
-                        raw["orchestrator"],
-                        OrchestratorConfig,
-                        section_name="orchestrator",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "claude" in raw:
-                    cfg.claude = _dict_to_dataclass(
-                        raw["claude"],
-                        ClaudeConfig,
-                        section_name="claude",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "codex" in raw:
-                    cfg.codex = _dict_to_dataclass(
-                        raw["codex"],
-                        CodexConfig,
-                        section_name="codex",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "retry" in raw:
-                    cfg.retry = _dict_to_dataclass(
-                        raw["retry"],
-                        RetryPolicy,
-                        section_name="retry",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "checkpoint" in raw:
-                    cfg.checkpoint = _dict_to_dataclass(
-                        raw["checkpoint"],
-                        CheckpointConfig,
-                        section_name="checkpoint",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "limits" in raw:
-                    cfg.limits = _dict_to_dataclass(
-                        raw["limits"],
-                        LimitsConfig,
-                        section_name="limits",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "spill" in raw:
-                    cfg.spill = _dict_to_dataclass(
-                        raw["spill"],
-                        SpillConfig,
-                        section_name="spill",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "pagination" in raw:
-                    cfg.pagination = _dict_to_dataclass(
-                        raw["pagination"],
-                        PaginationConfig,
-                        section_name="pagination",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "discovery" in raw:
-                    cfg.discovery = _dict_to_dataclass(
-                        raw["discovery"],
-                        DiscoveryConfig,
-                        section_name="discovery",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "rate_limit" in raw:
-                    cfg.rate_limit = _dict_to_dataclass(
-                        raw["rate_limit"],
-                        RateLimitConfig,
-                        section_name="rate_limit",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "monitor" in raw:
-                    cfg.monitor = _dict_to_dataclass(
-                        raw["monitor"],
-                        MonitorConfig,
-                        section_name="monitor",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "notification" in raw:
-                    cfg.notification = _dict_to_dataclass(
-                        raw["notification"],
-                        NotificationConfig,
-                        section_name="notification",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "health" in raw:
-                    cfg.health = _dict_to_dataclass(
-                        raw["health"],
-                        HealthConfig,
-                        section_name="health",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "alert" in raw:
-                    cfg.alert = _dict_to_dataclass(
-                        raw["alert"],
-                        AlertConfig,
-                        section_name="alert",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "audit" in raw:
-                    cfg.audit = _dict_to_dataclass(
-                        raw["audit"],
-                        AuditConfig,
-                        section_name="audit",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "cache" in raw:
-                    cfg.cache = _dict_to_dataclass(
-                        raw["cache"],
-                        CacheConfig,
-                        section_name="cache",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "guardrail" in raw:
-                    cfg.guardrail = _dict_to_dataclass(
-                        raw["guardrail"],
-                        GuardrailConfig,
-                        section_name="guardrail",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "metrics" in raw:
-                    cfg.metrics = _dict_to_dataclass(
-                        raw["metrics"],
-                        MetricsConfig,
-                        section_name="metrics",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "requirement" in raw:
-                    cfg.requirement = _dict_to_dataclass(
-                        raw["requirement"],
-                        RequirementConfig,
-                        section_name="requirement",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "auto" in raw:
-                    cfg.auto = _dict_to_dataclass(
-                        raw["auto"],
-                        AutoRuntimeConfig,
-                        section_name="auto",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "preview" in raw:
-                    cfg.preview = _dict_to_dataclass(
-                        raw["preview"],
-                        PreviewConfig,
-                        section_name="preview",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "workspace" in raw:
-                    cfg.workspace = _dict_to_dataclass(
-                        raw["workspace"],
-                        WorkspaceConfig,
-                        section_name="workspace",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "backup" in raw:
-                    cfg.backup = _dict_to_dataclass(
-                        raw["backup"],
-                        BackupConfig,
-                        section_name="backup",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "verification" in raw:
-                    cfg.verification = _dict_to_dataclass(
-                        raw["verification"],
-                        VerificationConfig,
-                        section_name="verification",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "delivery" in raw:
-                    cfg.delivery = _dict_to_dataclass(
-                        raw["delivery"],
-                        DeliveryConfig,
-                        section_name="delivery",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "routing" in raw:
-                    cfg.routing = _dict_to_dataclass(
-                        raw["routing"],
-                        RoutingConfig,
-                        defaults=cfg.routing,
-                        section_name="routing",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "simple" in raw:
-                    cfg.simple = _dict_to_dataclass(
-                        raw["simple"],
-                        SimpleConfig,
-                        section_name="simple",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
-                if "features" in raw:
-                    cfg.features = _dict_to_dataclass(
-                        raw["features"],
-                        FeaturesConfig,
-                        section_name="features",
-                        unknown_key_mode=effective_unknown_key_mode,
-                    )
+                _apply_config_sections(
+                    cfg,
+                    raw,
+                    unknown_key_mode=effective_unknown_key_mode,
+                )
             except (TypeError, ValueError) as e:
                 raise ConfigValidationError(
                     f"Invalid type in config file: {e}",
