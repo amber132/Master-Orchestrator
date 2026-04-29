@@ -219,6 +219,12 @@ _DEFAULT_MAX_TURNS = {
     "gpt-4.1-mini": 20,
 }
 
+_CODEX_MODEL_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "gpt-5.5": ("gpt-5.4", "gpt-5.3-codex", "gpt-5-codex"),
+    "gpt-5.4": ("gpt-5.3-codex", "gpt-5-codex"),
+    "gpt-5.4-mini": ("gpt-5.3-codex-spark", "gpt-5-codex-mini"),
+}
+
 # 网络健康探针配置
 _NETWORK_PROBE_TIMEOUT = 5  # 单次探测超时秒数
 _NETWORK_PROBE_MAX_WAIT = 60  # 最长等待网络恢复秒数（1 分钟，避免长时间阻塞重试）
@@ -929,13 +935,20 @@ def _build_model_fallback_candidates(model: str) -> list[str]:
     if not requested:
         return []
     candidates: list[str] = []
+    roots = [requested]
     if requested.endswith("-pro"):
-        candidates.append(requested[:-4])
-    if requested == "gpt-5.4":
-        candidates.extend(["gpt-5.3-codex", "gpt-5-codex"])
-    elif requested == "gpt-5.4-mini":
-        candidates.extend(["gpt-5.3-codex-spark", "gpt-5-codex-mini"])
-    return [candidate for candidate in candidates if candidate and candidate != requested]
+        roots.insert(0, requested[:-4])
+
+    for root in roots:
+        if root != requested:
+            candidates.append(root)
+        candidates.extend(_CODEX_MODEL_FALLBACKS.get(root, ()))
+
+    deduped: list[str] = []
+    for candidate in candidates:
+        if candidate and candidate != requested and candidate not in deduped:
+            deduped.append(candidate)
+    return deduped
 
 
 def _should_use_model_fallback(result: TaskResult, current_model: str) -> bool:
