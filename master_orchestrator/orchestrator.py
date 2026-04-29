@@ -1556,8 +1556,18 @@ class Orchestrator:
 
             normalized_hook_cmd = normalize_python_command(hook_cmd)
             if sys.platform == 'win32':
-                cmd: str | list[str] = normalized_hook_cmd
-                use_shell = True
+                parts = shlex.split(normalized_hook_cmd, posix=False)
+                normalized_parts = [
+                    part[1:-1] if len(part) >= 2 and part[0] == part[-1] and part[0] in {"'", '"'} else part
+                    for part in parts
+                ]
+                executable = sys.executable.replace("/", "\\").lower()
+                if normalized_parts and normalized_parts[0].replace("/", "\\").lower() == executable:
+                    cmd: str | list[str] = normalized_parts
+                    use_shell = False
+                else:
+                    cmd = normalized_hook_cmd
+                    use_shell = True
             else:
                 cmd = shlex.split(normalized_hook_cmd)
                 use_shell = False
