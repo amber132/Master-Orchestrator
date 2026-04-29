@@ -74,28 +74,44 @@ class PreparedItemWorkspace:
     source_baseline_bytes: bytes | None = None
     source_file_backups: dict[str, bytes | None] = field(default_factory=dict)
     workspace_git_root: Path | None = None
+    track_repo_status: bool = True
     baseline_git_changes: set[str] = field(default_factory=set)
     baseline_tree_hashes: dict[str, str] = field(default_factory=dict)
     ignored_repo_paths: set[str] = field(default_factory=set)
     can_git_restore: bool = False
     warnings: list[str] = field(default_factory=list)
 
+    def _is_ignored_repo_path(self, rel: str) -> bool:
+        normalized = rel.replace("\\", "/")
+        return any(
+            normalized == ignored or normalized.startswith(f"{ignored}/")
+            for ignored in self.ignored_repo_paths
+        )
+
     def collect_changed_files(self) -> list[str]:
         if self.effective_mode == SimpleIsolationMode.COPY.value:
             current = _scan_tree_hashes(self.cwd)
             keys = set(current) | set(self.baseline_tree_hashes)
             return sorted(key for key in keys if current.get(key, "") != self.baseline_tree_hashes.get(key, ""))
-        repo_root = self.workspace_git_root or _git_repo_root(self.cwd)
+        repo_root = (self.workspace_git_root or _git_repo_root(self.cwd)) if self.track_repo_status else None
         if not repo_root:
-            candidates = {path.replace("\\", "/") for path in self.source_file_backups}
+            candidates = {
+                path.replace("\\", "/")
+                for path in self.source_file_backups
+                if not self._is_ignored_repo_path(path)
+            }
             if self.item.item_type == SimpleItemType.DIRECTORY_SHARD:
                 root = (self.cwd / self.item.target).resolve()
                 if root.exists() and root.is_dir():
                     for path in root.rglob("*"):
                         if path.is_file():
-                            candidates.add(str(path.relative_to(self.cwd)).replace("\\", "/"))
+                            rel = str(path.relative_to(self.cwd)).replace("\\", "/")
+                            if not self._is_ignored_repo_path(rel):
+                                candidates.add(rel)
             else:
-                candidates.add(self.item.target.replace("\\", "/"))
+                target = self.item.target.replace("\\", "/")
+                if not self._is_ignored_repo_path(target):
+                    candidates.add(target)
             changed: list[str] = []
             for rel in sorted(candidates):
                 baseline = self.source_file_backups.get(rel)
@@ -116,7 +132,7 @@ class PreparedItemWorkspace:
         for line in proc.stdout.splitlines():
             if len(line) >= 4:
                 rel = line[3:].strip().replace("\\", "/")
-                if any(rel == ignored or rel.startswith(f"{ignored}/") for ignored in self.ignored_repo_paths):
+                if self._is_ignored_repo_path(rel):
                     continue
                 current.add(rel)
         return sorted(current - self.baseline_git_changes)
@@ -239,17 +255,17 @@ class SimpleIsolationManager:
             self._copy_path_to_workspace(root, normalized)
         return root
 
-    def _ensure_worktree_root(self) -> tuple[Path, list[str]]:
+    def _ensure_worktree_root(self, item: SimpleWorkItem) -> tuple[Path, list[str]]:
         warnings: list[str] = []
         if self._worktree_ready:
             return self._worktree_root, warnings
         if os.name == "nt" and len(str(self._worktree_root)) > self.config.windows_path_budget:
             warnings.append("worktree 路径预算超限，自动降级到 copy")
-            return self._ensure_copy_root(), warnings
+            return self._prepare_copy_scope(item), warnings
         repo_root = _git_repo_root(self.repo_root)
         if repo_root is None:
             warnings.append("当前目录不是 git 仓库，worktree 自动降级到 copy")
-            return self._ensure_copy_root(), warnings
+            return self._prepare_copy_scope(item), warnings
         branch = f"simple/{self.run_id[:8]}"
         try:
             subprocess.run(
@@ -266,7 +282,7 @@ class SimpleIsolationManager:
             return self._worktree_root, warnings
         except Exception as exc:
             warnings.append(f"worktree 创建失败，自动降级到 copy: {exc}")
-            return self._ensure_copy_root(), warnings
+            return self._prepare_copy_scope(item), warnings
 
     def prepare(self, item: SimpleWorkItem) -> PreparedItemWorkspace:
         warnings: list[str] = []
@@ -274,7 +290,7 @@ class SimpleIsolationManager:
             cwd = self.repo_root
             effective_mode = SimpleIsolationMode.NONE.value
         elif self.requested_mode == SimpleIsolationMode.WORKTREE.value:
-            cwd, warnings = self._ensure_worktree_root()
+            cwd, warnings = self._ensure_worktree_root(item)
             effective_mode = self._effective_mode
         else:
             cwd = self._prepare_copy_scope(item)
@@ -321,6 +337,7 @@ class SimpleIsolationManager:
             source_target_path=source_target_path,
             git_root=git_root,
             workspace_git_root=repo_for_status,
+            track_repo_status=use_repo_status_tracking,
             source_baseline_hash=_file_hash(source_target_path),
             target_baseline_hash=_file_hash(target_path),
             source_baseline_bytes=_read_bytes(source_target_path),

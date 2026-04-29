@@ -298,6 +298,115 @@ def test_none_mode_collect_changed_files_keeps_local_sibling_detection(tmp_path:
     assert prepared.collect_changed_files() == ["pkg/helper.py", "pkg/target.py"]
 
 
+def test_none_mode_file_item_does_not_rescan_dirty_parent_repo(tmp_path: Path, monkeypatch) -> None:
+    outer_repo = tmp_path / "outer"
+    workspace = outer_repo / "workspace"
+    workspace.mkdir(parents=True)
+    (outer_repo / "README.md").write_text("dirty parent repo\n", encoding="utf-8")
+    (workspace / "sample.py").write_text("print('a')\n", encoding="utf-8")
+
+    config = Config()
+    layout = SimpleRuntimeLayout.create(tmp_path / "run")
+    manager = SimpleIsolationManager(workspace, layout, config.simple, "run123", "none")
+    item = SimpleWorkItem(
+        item_id="a",
+        item_type=SimpleItemType.FILE,
+        target="sample.py",
+        bucket=".",
+        priority=0,
+        instruction="annotate",
+        attempt_state=AttemptState(max_attempts=3),
+        timeout_seconds=30,
+    )
+
+    calls = {"git_status": 0}
+
+    def fake_git_root(path: Path) -> Path:
+        return outer_repo
+
+    class Result:
+        stdout = "?? README.md\n?? workspace/sample.py\n"
+
+    def fake_run(cmd, cwd=None, **kwargs):
+        if cmd[:2] == ["git", "status"]:
+            calls["git_status"] += 1
+            return Result()
+        raise AssertionError(f"unexpected subprocess call: {cmd}")
+
+    monkeypatch.setattr("claude_orchestrator.simple_isolation._git_repo_root", fake_git_root)
+    monkeypatch.setattr("claude_orchestrator.simple_isolation.subprocess.run", fake_run)
+
+    prepared = manager.prepare(item)
+    (workspace / "sample.py").write_text("# note\nprint('a')\n", encoding="utf-8")
+
+    assert prepared.collect_changed_files() == ["sample.py"]
+    assert calls["git_status"] == 1
+
+
+def test_none_mode_file_fallback_ignores_runtime_paths(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("print('a')\n", encoding="utf-8")
+    (repo / "state.db").write_text("before\n", encoding="utf-8")
+
+    config = Config()
+    layout = SimpleRuntimeLayout.create(tmp_path / "run")
+    manager = SimpleIsolationManager(
+        repo,
+        layout,
+        config.simple,
+        "run123",
+        "none",
+        ignored_repo_paths={"state.db"},
+    )
+    item = SimpleWorkItem(
+        item_id="a",
+        item_type=SimpleItemType.FILE,
+        target="a.py",
+        bucket=".",
+        priority=0,
+        instruction="annotate",
+        attempt_state=AttemptState(max_attempts=3),
+        timeout_seconds=30,
+    )
+
+    prepared = manager.prepare(item)
+    (repo / "a.py").write_text("# note\nprint('a')\n", encoding="utf-8")
+    (repo / "state.db").write_text("after\n", encoding="utf-8")
+
+    assert prepared.collect_changed_files() == ["a.py"]
+
+
+def test_worktree_mode_falls_back_to_copy_when_git_root_missing(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("print('a')\n", encoding="utf-8")
+
+    config = Config()
+    config.simple.copy_root_dir = str(tmp_path / "copies")
+    layout = SimpleRuntimeLayout.create(tmp_path / "run")
+    manager = SimpleIsolationManager(repo, layout, config.simple, "run123", "worktree")
+    item = SimpleWorkItem(
+        item_id="a",
+        item_type=SimpleItemType.FILE,
+        target="a.py",
+        bucket=".",
+        priority=0,
+        instruction="annotate",
+        attempt_state=AttemptState(max_attempts=3),
+        timeout_seconds=30,
+    )
+
+    monkeypatch.setattr("claude_orchestrator.simple_isolation._git_repo_root", lambda path: None)
+
+    prepared = manager.prepare(item)
+
+    assert prepared.effective_mode == "copy"
+    assert prepared.target_path == Path(config.simple.copy_root_dir) / "run123" / "a" / "workspace" / "a.py"
+    assert prepared.target_path.exists()
+    assert "worktree 自动降级到 copy" in prepared.warnings[0]
+
+
 def test_copy_back_returns_validation_error_when_target_missing(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / ".github" / "scripts").mkdir(parents=True)
