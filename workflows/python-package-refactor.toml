@@ -1,0 +1,72 @@
+# Python 包结构重构
+# 用法: mo do @workflows/python-package-refactor.toml
+
+[dag]
+name = "python-package-refactor"
+max_parallel = 3
+
+[tasks.analyze_structure]
+prompt = """
+分析当前项目结构。
+
+要求：
+1. 扫描所有 Python 文件，列出模块依赖关系
+2. 识别循环依赖
+3. 找出过大的文件（>500 行）
+4. 识别可以合并或拆分的模块
+5. 输出 JSON 格式的分析结果到 .refactor/analysis.json
+"""
+timeout = 600
+
+[tasks.create_packages]
+prompt = """
+创建新的包结构。
+
+要求：
+1. 根据分析结果创建新的目录结构
+2. 每个包都有 __init__.py
+3. 保持向后兼容的 re-export（旧 import 路径仍然可用）
+4. 创建 py.typed 标记文件
+"""
+depends_on = ["analyze_structure"]
+timeout = 600
+
+[tasks.move_modules]
+prompt = """
+移动模块到新位置。
+
+要求：
+1. 按照新结构移动文件
+2. 更新所有 import 语句
+3. 确保循环依赖被打破
+4. 过大的文件拆分为多个模块
+5. 保持所有测试通过
+"""
+depends_on = ["create_packages"]
+timeout = 900
+
+[tasks.update_tests]
+prompt = """
+更新测试以匹配新结构。
+
+要求：
+1. 更新测试文件的 import 路径
+2. 确保所有测试仍然通过
+3. 如果发现测试覆盖不足，补充关键测试
+4. 运行 pytest 确认无回归
+"""
+depends_on = ["move_modules"]
+timeout = 600
+
+[tasks.update_docs]
+prompt = """
+更新文档和配置。
+
+要求：
+1. 更新 README 中的项目结构说明
+2. 更新 pyproject.toml 中的 package 配置
+3. 更新 type stubs（如果有）
+4. 更新 CI 配置中的 import 路径（如果有）
+"""
+depends_on = ["update_tests"]
+timeout = 300

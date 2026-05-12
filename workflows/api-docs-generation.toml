@@ -1,0 +1,72 @@
+# API 文档自动生成
+# 用法: mo do @workflows/api-docs-generation.toml
+
+[dag]
+name = "api-docs-generation"
+max_parallel = 4
+
+[tasks.scan_endpoints]
+prompt = """
+扫描所有 API 端点。
+
+要求：
+1. 扫描路由定义文件
+2. 提取所有 HTTP 方法和路径
+3. 识别请求参数、body、headers
+4. 识别响应格式和状态码
+5. 输出到 .docs/endpoints.json
+"""
+timeout = 300
+
+[tasks.generate_openapi]
+prompt = """
+生成 OpenAPI 3.0 规范。
+
+要求：
+1. 基于端点扫描结果生成 YAML
+2. 包含所有路径、方法、参数
+3. 定义 request/response schema
+4. 包含认证说明
+5. 输出到 docs/openapi.yaml
+"""
+depends_on = ["scan_endpoints"]
+timeout = 600
+
+[tasks.write_examples]
+prompt = """
+编写 API 使用示例。
+
+要求：
+1. 每个端点至少 2 个 curl 示例
+2. 包含成功和失败的示例
+3. 包含认证示例
+4. 输出到 docs/examples.md
+"""
+depends_on = ["scan_endpoints"]
+timeout = 600
+
+[tasks.generate_markdown]
+prompt = """
+生成 Markdown 格式文档。
+
+要求：
+1. 按模块分组的端点说明
+2. 每个端点包含：路径、方法、参数、响应、示例
+3. 包含错误码参考表
+4. 输出到 docs/api-reference.md
+"""
+depends_on = ["generate_openapi", "write_examples"]
+timeout = 600
+
+[tasks.setup_redoc]
+prompt = """
+配置 ReDoc 文档站点。
+
+要求：
+1. 创建 docs/index.html 使用 ReDoc
+2. 配置主题和品牌
+3. 添加搜索功能
+4. 确保可通过 GitHub Pages 访问
+"""
+depends_on = ["generate_markdown"]
+timeout = 300

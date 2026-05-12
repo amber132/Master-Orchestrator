@@ -1,0 +1,74 @@
+# Express.js JWT 认证模块完整实现
+# 用法: mo do @workflows/express-jwt-auth.toml
+
+[dag]
+name = "express-jwt-auth"
+max_parallel = 4
+
+[tasks.auth_middleware]
+prompt = """
+创建 Express JWT 认证中间件。
+
+要求：
+1. 在 src/middleware/auth.js 中创建
+2. 从 Authorization header 提取 Bearer token
+3. 使用 jsonwebtoken 验证 token
+4. 验证失败返回 401
+5. 验证成功将 user 信息挂载到 req.user
+6. 导出 requireAuth 中间件函数
+"""
+timeout = 300
+
+[tasks.auth_utils]
+prompt = """
+创建 JWT 工具函数。
+
+要求：
+1. 在 src/utils/token.js 中创建
+2. generateToken(payload, expiresIn='24h') — 生成 token
+3. verifyToken(token) — 验证并解码 token
+4. 使用环境变量 JWT_SECRET，未设置时抛出明确错误
+"""
+timeout = 300
+
+[tasks.auth_routes]
+prompt = """
+创建认证路由。
+
+要求：
+1. 在 src/routes/auth.js 中创建
+2. POST /auth/register — 注册（用户名+密码，密码用 bcrypt 加密）
+3. POST /auth/login — 登录（验证密码，返回 token）
+4. GET /auth/me — 获取当前用户信息（需要 requireAuth 中间件）
+5. 依赖 auth_middleware 和 auth_utils
+"""
+depends_on = ["auth_middleware", "auth_utils"]
+timeout = 300
+
+[tasks.auth_tests]
+prompt = """
+编写认证模块测试。
+
+要求：
+1. 在 tests/auth.test.js 中创建
+2. 测试注册流程（成功+重复用户名）
+3. 测试登录流程（成功+错误密码）
+4. 测试 token 验证（有效+过期+无效）
+5. 测试受保护路由（有 token+无 token）
+6. 使用 supertest 和 jest
+"""
+depends_on = ["auth_routes"]
+timeout = 300
+
+[tasks.auth_docs]
+prompt = """
+更新 API 文档。
+
+要求：
+1. 在 docs/auth.md 中创建
+2. 记录所有认证端点的请求/响应格式
+3. 包含 curl 示例
+4. 记录错误码和错误消息
+"""
+depends_on = ["auth_routes"]
+timeout = 300

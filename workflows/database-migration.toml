@@ -1,0 +1,72 @@
+# 数据库 Schema 迁移
+# 用法: mo do @workflows/database-migration.toml
+
+[dag]
+name = "database-migration"
+max_parallel = 3
+
+[tasks.analyze_schema]
+prompt = """
+分析当前数据库 schema。
+
+要求：
+1. 读取所有 migration 文件
+2. 生成当前 schema 的完整 DDL
+3. 识别潜在的问题（缺少索引、类型不一致等）
+4. 输出到 .migration/schema_analysis.md
+"""
+timeout = 300
+
+[tasks.write_migration]
+prompt = """
+编写新的 migration SQL。
+
+要求：
+1. 创建 migration 文件（带版本号）
+2. 支持 upgrade 和 downgrade
+3. 处理数据迁移（不仅仅是 schema 变更）
+4. 添加必要的索引
+5. 考虑大表的在线迁移策略
+"""
+depends_on = ["analyze_schema"]
+timeout = 600
+
+[tasks.update_models]
+prompt = """
+更新 ORM 模型以匹配新 schema。
+
+要求：
+1. 更新 dataclass / Pydantic model
+2. 更新序列化/反序列化逻辑
+3. 保持向后兼容（旧数据仍可读取）
+4. 更新 type hints
+"""
+depends_on = ["write_migration"]
+timeout = 600
+
+[tasks.write_migration_tests]
+prompt = """
+编写 migration 测试。
+
+要求：
+1. 测试 upgrade 流程
+2. 测试 downgrade 流程
+3. 测试数据迁移的正确性
+4. 测试幂等性（重复执行不出错）
+5. 测试并发安全性
+"""
+depends_on = ["update_models"]
+timeout = 600
+
+[tasks.update_docs]
+prompt = """
+更新数据库文档。
+
+要求：
+1. 更新 ER 图
+2. 更新字段说明
+3. 记录 breaking changes
+4. 更新 API 文档中的数据模型部分
+"""
+depends_on = ["write_migration_tests"]
+timeout = 300

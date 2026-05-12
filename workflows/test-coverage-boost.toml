@@ -1,0 +1,85 @@
+# 提升测试覆盖率到 80%+
+# 用法: mo do @workflows/test-coverage-boost.toml
+
+[dag]
+name = "test-coverage-boost"
+max_parallel = 5
+
+[tasks.coverage_report]
+prompt = """
+生成当前测试覆盖率报告。
+
+要求：
+1. 运行 pytest --cov=src --cov-report=json
+2. 识别覆盖率最低的 10 个模块
+3. 为每个模块列出未覆盖的函数和分支
+4. 输出到 .coverage/report.json
+"""
+timeout = 300
+
+[tasks.unit_tests_core]
+prompt = """
+为核心模块编写单元测试。
+
+要求：
+1. 覆盖率最低的前 3 个核心模块
+2. 每个公开函数至少 3 个测试用例
+3. 覆盖正常路径、边界情况、错误处理
+4. 使用 pytest fixtures 和 parametrize
+5. 目标：每个模块覆盖率 > 80%
+"""
+depends_on = ["coverage_report"]
+timeout = 600
+
+[tasks.unit_tests_utils]
+prompt = """
+为工具函数编写单元测试。
+
+要求：
+1. 覆盖率最低的工具/辅助模块
+2. 纯函数优先（易于测试）
+3. 使用 mock 隔离外部依赖
+4. 目标：每个模块覆盖率 > 80%
+"""
+depends_on = ["coverage_report"]
+timeout = 600
+
+[tasks.integration_tests]
+prompt = """
+编写集成测试。
+
+要求：
+1. 测试模块间的交互
+2. 测试 API 端点的完整流程
+3. 测试数据库操作的正确性
+4. 使用真实依赖而非 mock
+"""
+depends_on = ["unit_tests_core", "unit_tests_utils"]
+timeout = 600
+
+[tasks.edge_case_tests]
+prompt = """
+补充边界情况测试。
+
+要求：
+1. 空输入、None 输入
+2. 超大输入
+3. 并发访问
+4. 网络超时和重试
+5. Unicode 和特殊字符处理
+"""
+depends_on = ["integration_tests"]
+timeout = 600
+
+[tasks.final_report]
+prompt = """
+生成最终覆盖率报告。
+
+要求：
+1. 运行完整测试套件
+2. 生成覆盖率报告
+3. 对比改进前后的覆盖率
+4. 列出仍然不足的模块和原因
+"""
+depends_on = ["edge_case_tests"]
+timeout = 300
