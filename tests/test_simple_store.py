@@ -176,7 +176,7 @@ def test_simple_store_create_run_bundle_persists_items_and_buckets(tmp_path: Pat
     assert [item.item_id for item in loaded_items] == ["item-1", "item-2"]
     assert loaded_buckets["pkg"].total_items == 1
     assert loaded_buckets["tests"].total_items == 1
-    assert run_row == ("simple:none", "running")
+    assert run_row == ("simple:annotate", "running")
 
 
 def test_simple_event_accessors_decode_json_payload(tmp_path: Path) -> None:

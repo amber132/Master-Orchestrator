@@ -10,6 +10,7 @@ Responsibilities:
 from __future__ import annotations
 
 import logging
+import re
 
 from .auto_model import AutoConfig, Phase, ReviewResult
 from .exceptions import DAGValidationError
@@ -19,6 +20,29 @@ from .task_contract import TaskContract
 from .task_templates import build_document_execution_rules, build_refactor_execution_rules
 
 logger = logging.getLogger(__name__)
+
+
+def _goal_slug(text: str, max_len: int = 40) -> str:
+    """从目标文本中提取简短可读的标识符。
+
+    例: "修复 login API 返回 500 错误" → "fix-login-api-500"
+    """
+    if not text:
+        return ""
+    # 取前 max_len 个字符，去除多余空白
+    slug = text.strip()[:max_len]
+    # 中文：取前 20 字符作为摘要
+    if re.search(r'[一-鿿]', slug):
+        slug = re.sub(r'\s+', '-', slug)
+        slug = re.sub(r'[^\w一-鿿-]', '', slug)
+        return slug[:20] if slug else ""
+    # 英文：转小写，非字母数字替换为连字符，去重连字符
+    slug = slug.lower()
+    slug = re.sub(r'[^a-z0-9]+', '-', slug)
+    slug = slug.strip('-')
+    # 取前 5 个有意义的词
+    parts = [p for p in slug.split('-') if p][:5]
+    return '-'.join(parts) if parts else ""
 
 # 注入到每个任务 prompt 末尾的效率约束，防止 Claude 过度探索
 _TASK_EFFICIENCY_CONSTRAINT = r"""
@@ -59,7 +83,9 @@ class DAGGenerator:
         task_contract: TaskContract | None = None,
     ) -> DAG:
         """Convert a Phase's raw_tasks into a validated DAG."""
-        dag = DAG(name=f"{phase.id}_iter{phase.iteration}", max_parallel=self._max_parallel)
+        goal = _goal_slug(task_contract.normalized_goal) if task_contract else ""
+        dag_name = f"{goal}__{phase.id}_iter{phase.iteration}" if goal else f"{phase.id}_iter{phase.iteration}"
+        dag = DAG(name=dag_name, max_parallel=self._max_parallel)
         context_prefix = self._build_context_prefix(
             phase,
             project_context,
@@ -117,7 +143,9 @@ class DAGGenerator:
         task_contract: TaskContract | None = None,
     ) -> DAG:
         """Generate a DAG from corrective actions in a review result."""
-        dag = DAG(name=f"{phase.id}_fix_iter{phase.iteration}", max_parallel=self._max_parallel)
+        goal = _goal_slug(task_contract.normalized_goal) if task_contract else ""
+        dag_name = f"{goal}__{phase.id}_fix_iter{phase.iteration}" if goal else f"{phase.id}_fix_iter{phase.iteration}"
+        dag = DAG(name=dag_name, max_parallel=self._max_parallel)
         if not review.corrective_actions:
             return dag
 

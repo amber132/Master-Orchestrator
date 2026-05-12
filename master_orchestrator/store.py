@@ -332,6 +332,10 @@ ALTER TABLE task_attempts ADD COLUMN provider_used TEXT NOT NULL DEFAULT '';
 ALTER TABLE simple_attempts ADD COLUMN provider_used TEXT NOT NULL DEFAULT '';
 """)
 
+_register_migration(13, """
+ALTER TABLE task_results ADD COLUMN depends_on_json TEXT NOT NULL DEFAULT '[]';
+""")
+
 
 class Store:
     """SQLite-backed checkpoint store with schema version management."""
@@ -730,14 +734,24 @@ class Store:
                 ).fetchone()
         return self.get_run(row[0]) if row else None
 
+    def list_runs(self, limit: int = 50) -> list[RunInfo]:
+        """查询最近 N 条 DAG 运行记录。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT run_id FROM runs ORDER BY started_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [r for r in (self.get_run(row[0]) for row in rows) if r is not None]
+
     # ── Task result operations ──
 
-    def init_task(self, run_id: str, task_id: str) -> None:
+    def init_task(self, run_id: str, task_id: str, depends_on: list[str] | None = None) -> None:
         """初始化任务记录（如果不存在）。"""
         _logger.debug("[init_task] run_id=%s, task_id=%s", run_id, task_id)
+        deps_json = json.dumps(depends_on or [], ensure_ascii=False)
         self._execute_write(
-            "INSERT OR IGNORE INTO task_results (run_id, task_id, status) VALUES (?, ?, ?)",
-            (run_id, task_id, TaskStatus.PENDING.value),
+            "INSERT OR IGNORE INTO task_results (run_id, task_id, status, depends_on_json) VALUES (?, ?, ?, ?)",
+            (run_id, task_id, TaskStatus.PENDING.value, deps_json),
             operation="init_task",
         )
 
@@ -833,7 +847,7 @@ class Store:
                 parsed_output = json.loads(row[4]) if row[4] else None
             except json.JSONDecodeError as e:
                 raise CheckpointError(f"Corrupted JSON in parsed_output for task {row[0]}: {e}") from e
-            
+
             results[row[0]] = TaskResult(
                 task_id=row[0],
                 status=TaskStatus(row[1]),
@@ -850,6 +864,21 @@ class Store:
                 pid=row[12],
             )
         return results
+
+    def get_task_dependencies(self, run_id: str) -> dict[str, list[str]]:
+        """获取运行中每个任务的依赖关系。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT task_id, depends_on_json FROM task_results WHERE run_id=?",
+                (run_id,),
+            ).fetchall()
+        deps = {}
+        for row in rows:
+            try:
+                deps[row[0]] = json.loads(row[1]) if row[1] else []
+            except json.JSONDecodeError:
+                deps[row[0]] = []
+        return deps
 
     def reset_running_tasks(self, run_id: str) -> int:
         """将 RUNNING 状态的任务重置为 PENDING（崩溃恢复）。返回重置数量。"""

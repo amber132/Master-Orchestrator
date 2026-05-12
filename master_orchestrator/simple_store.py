@@ -25,10 +25,13 @@ class SimpleStore:
         bucket_totals: dict[str, int] = {}
         for item in items:
             bucket_totals[item.bucket] = bucket_totals.get(item.bucket, 0) + 1
+        # 用指令文本作为 DAG 名称，便于在 dashboard 中区分不同任务
+        instruction_name = run.instruction_template[:60].strip() if run.instruction_template else ""
+        dag_name = f"simple:{instruction_name}" if instruction_name else f"simple:{run.isolation_mode}"
         self._store.create_simple_run_bundle(
             RunInfo(
                 run_id=run.run_id,
-                dag_name=f"simple:{run.isolation_mode}",
+                dag_name=dag_name,
                 dag_hash="simple",
                 status=RunStatus.RUNNING,
                 started_at=run.started_at,

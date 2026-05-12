@@ -800,8 +800,8 @@ class Orchestrator:
             set_run_id(self._run_info.run_id)
 
             # Initialize all tasks in checkpoint
-            for tid in self._dag.tasks:
-                self._store.init_task(self._run_info.run_id, tid)
+            for tid, node in self._dag.tasks.items():
+                self._store.init_task(self._run_info.run_id, tid, depends_on=list(node.depends_on))
 
             logger.info("Starting run %s for DAG '%s' (%d tasks)",
                          self._run_info.run_id, self._dag.name, len(self._dag.tasks))
