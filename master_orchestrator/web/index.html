@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Master Orchestrator Dashboard</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--orange:#d29922;--red:#f85149;--purple:#bc8cff}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:var(--card);padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+.header h1{font-size:18px;font-weight:600}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.header .status{margin-left:auto;font-size:13px;color:var(--muted)}
+.container{max-width:1400px;margin:0 auto;padding:24px}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+.kpi-card .label{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px}
+.kpi-card .value{font-size:28px;font-weight:700}
+.tabs{display:flex;gap:4px;margin-bottom:16px}
+.tab{padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;background:transparent;color:var(--muted);border:1px solid transparent;transition:all .2s}
+.tab:hover{color:var(--text);background:var(--card)}
+.tab.active{background:var(--card);color:var(--accent);border-color:var(--border)}
+.table-wrap{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px}
+table{width:100%;border-collapse:collapse}
+th{padding:12px 16px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-bottom:1px solid var(--border);background:rgba(0,0,0,.2)}
+td{padding:10px 16px;border-bottom:1px solid var(--border);font-size:14px;cursor:pointer}
+tr:hover td{background:rgba(88,166,255,.05)}
+.badge{padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;display:inline-block}
+.badge-success{background:#166534;color:#86efac}
+.badge-running{background:#854d0e;color:#fde047}
+.badge-failed{background:#991b1b;color:#fca5a5}
+.badge-pending{background:var(--border);color:var(--muted)}
+.badge-completed{background:#166534;color:#86efac}
+.badge-partial{background:#854d0e;color:#fde047}
+.badge-cancelled{background:var(--border);color:var(--muted)}
+.panels{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:900px){.panels{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;min-height:300px}
+.panel h3{font-size:14px;color:var(--muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:.05em}
+canvas{width:100%;height:280px;border-radius:8px}
+.detail-empty{color:var(--muted);font-size:14px;padding:40px;text-align:center}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px}
+.detail-grid .key{color:var(--muted)}
+.detail-grid .val{font-weight:500}
+.detail-error{margin-top:12px;padding:12px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:8px;font-family:monospace;font-size:12px;color:var(--red);max-height:120px;overflow-y:auto;white-space:pre-wrap}
+.bar-chart{display:flex;flex-direction:column;gap:8px}
+.bar-row{display:flex;align-items:center;gap:8px}
+.bar-label{width:80px;font-size:12px;color:var(--muted);text-align:right;flex-shrink:0}
+.bar-track{flex:1;height:20px;background:rgba(255,255,255,.05);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .5s;display:flex;align-items:center;padding-left:6px;font-size:11px;font-weight:600}
+.bar-value{font-size:12px;color:var(--muted);width:60px;text-align:right;flex-shrink:0}
+.error-list{display:flex;flex-direction:column;gap:6px}
+.error-row{display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(248,81,73,.05);border-radius:6px;border:1px solid rgba(248,81,73,.15)}
+.error-count{background:var(--red);color:white;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;min-width:24px;text-align:center}
+.error-msg{font-size:13px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sse-indicator{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.sse-live{background:var(--green);animation:pulse 1.5s infinite}
+.sse-off{background:var(--muted)}
+.footer{text-align:center;padding:16px;color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="dot" id="pulse"></div>
+  <h1>Master Orchestrator</h1>
+  <span class="status"><span class="sse-indicator sse-off" id="sse-dot"></span><span id="status-text">connecting...</span></span>
+</div>
+<div class="container">
+  <div class="kpi">
+    <div class="kpi-card"><div class="label">Total Runs</div><div class="value" id="kpi-runs">-</div></div>
+    <div class="kpi-card"><div class="label">Success Rate</div><div class="value" id="kpi-rate">-</div></div>
+    <div class="kpi-card"><div class="label">Total Cost</div><div class="value" id="kpi-cost">-</div></div>
+    <div class="kpi-card"><div class="label">Active Tasks</div><div class="value" id="kpi-active">-</div></div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" data-tab="dag">DAG Runs</div>
+    <div class="tab" data-tab="simple">Simple Runs</div>
+  </div>
+  <div class="table-wrap"><table><thead><tr id="table-head"></tr></thead><tbody id="table-body"></tbody></table></div>
+  <div class="panels">
+    <div class="panel"><h3>DAG Visualization</h3><canvas id="dag-canvas"></canvas></div>
+    <div class="panel"><h3>Task Details</h3><div id="detail-panel"><div class="detail-empty">Click a task node to view details</div></div></div>
+  </div>
+  <div class="panels">
+    <div class="panel"><h3>Cost by Provider</h3><div id="cost-panel"><div class="detail-empty">Select a run to view cost breakdown</div></div></div>
+    <div class="panel"><h3>Failure Analysis</h3><div id="failure-panel"><div class="detail-empty">Select a run to view failure analysis</div></div></div>
+  </div>
+</div>
+<div class="footer">Auto-refresh every 3 seconds</div>
+<script>
+// ── State ──
+let currentTab = 'dag';
+let dagRuns = [];
+let simpleRuns = [];
+let selectedRun = null;
+let selectedRunTasks = [];
+let sseSource = null;
+
+const STATUS_COLOR = {
+  success:'#3fb950',completed:'#3fb950',running:'#d29922',failed:'#f85149',
+  pending:'#8b949e',waiting:'#8b949e',ready:'#58a6ff',skipped:'#8b949e',
+  cancelled:'#8b949e',queued:'#8b949e',scanning:'#d29922',draining:'#d29922',
+  partial_success:'#d29922',succeeded:'#3fb950',preparing:'#58a6ff',
+  executing:'#d29922',validating:'#bc8cff',retry_wait:'#d29922',blocked:'#f85149',
+};
+const PROVIDER_COLORS = {claude:'#d29922',codex:'#3fb950',auto:'#58a6ff'};
+
+function badgeClass(s){s=(s||'').toLowerCase();if(['success','completed','succeeded'].includes(s))return'badge-success';if(['running','executing','scanning','draining','preparing'].includes(s))return'badge-running';if(['failed','blocked'].includes(s))return'badge-failed';if(['partial_success','retry_wait'].includes(s))return'badge-partial';if(['cancelled'].includes(s))return'badge-cancelled';return'badge-pending'}
+function fmtD(s){if(!s&&s!==0)return'-';const h=Math.floor(s/3600),m=Math.floor(s%3600/60),ss=Math.floor(s%60);return h?`${h}h${m}m`:m?`${m}m${ss}s`:`${ss}s`}
+function fmtC(u){if(!u&&u!==0)return'-';return'$'+u.toFixed(4)}
+function fmtT(iso){if(!iso)return'-';return new Date(iso).toLocaleString()}
+
+// ── Tabs ──
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');currentTab=t.dataset.tab;renderTable();clearSelection();
+}));
+
+// ── Data fetching ──
+async function fetchJ(u){const r=await fetch(u);if(!r.ok)throw new Error(r.statusText);return r.json()}
+
+async function refresh(){
+  try{
+    const[a,b,c]=await Promise.all([fetchJ('/api/runs').catch(()=>({runs:[]})),fetchJ('/api/simple/runs').catch(()=>({runs:[]})),fetchJ('/api/status').catch(()=>({}))]);
+    dagRuns=a.runs||[];simpleRuns=b.runs||[];updateKPI(c);renderTable();
+    document.getElementById('status-text').textContent='last update: '+new Date().toLocaleTimeString();
+    document.getElementById('pulse').style.background='var(--green)';
+  }catch{document.getElementById('status-text').textContent='connection failed';document.getElementById('pulse').style.background='var(--red)'}
+}
+
+function updateKPI(st){
+  const r=dagRuns;
+  document.getElementById('kpi-runs').textContent=r.length;
+  const ok=r.filter(x=>['completed','success'].includes((x.status||'').toLowerCase())).length;
+  document.getElementById('kpi-rate').textContent=r.length?Math.round(ok/r.length*100)+'%':'-';
+  document.getElementById('kpi-cost').textContent=fmtC(r.reduce((s,x)=>s+(x.total_cost_usd||0),0));
+  const act=r.filter(x=>(x.status||'').toLowerCase()==='running').reduce((s,x)=>s+(x.task_counts?.running||0),0);
+  document.getElementById('kpi-active').textContent=act||(st.run_status==='RUNNING'?'...':'0');
+}
+
+// ── Table ──
+function renderTable(){
+  const h=document.getElementById('table-head'),b=document.getElementById('table-body');
+  if(currentTab==='dag'){
+    h.innerHTML='<th>ID</th><th>DAG Name</th><th>Status</th><th>Tasks</th><th>Cost</th><th>Started</th>';
+    b.innerHTML=dagRuns.map(r=>`<tr onclick="selectDag('${r.run_id}')"><td style="font-family:monospace;font-size:12px">${r.run_id.slice(0,12)}</td><td>${r.dag_name||'-'}</td><td><span class="badge ${badgeClass(r.status)}">${r.status}</span></td><td>${r.task_total||0}</td><td>${fmtC(r.total_cost_usd)}</td><td>${fmtT(r.started_at)}</td></tr>`).join('')||'<tr><td colspan="6" style="text-align:center;color:var(--muted)">No runs yet</td></tr>';
+  }else{
+    h.innerHTML='<th>ID</th><th>Instruction</th><th>Status</th><th>Items</th><th>Started</th>';
+    b.innerHTML=simpleRuns.map(r=>`<tr onclick="selectSimple('${r.run_id}')"><td style="font-family:monospace;font-size:12px">${r.run_id.slice(0,12)}</td><td>${r.instruction||'-'}</td><td><span class="badge ${badgeClass(r.status)}">${r.status}</span></td><td>${r.total_items||0}</td><td>${fmtT(r.started_at)}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--muted)">No simple runs yet</td></tr>';
+  }
+}
+
+function clearSelection(){selectedRun=null;selectedRunTasks=[];drawDag();document.getElementById('detail-panel').innerHTML='<div class="detail-empty">Click a task node to view details</div>';document.getElementById('cost-panel').innerHTML='<div class="detail-empty">Select a run to view cost breakdown</div>';document.getElementById('failure-panel').innerHTML='<div class="detail-empty">Select a run to view failure analysis</div>'}
+
+// ── Run selection ──
+async function selectDag(id){
+  try{
+    const d=await fetchJ('/api/runs/'+id);selectedRun=d;selectedRunTasks=d.tasks||[];
+    drawDag();updateCostPanel();updateFailurePanel();
+    document.getElementById('detail-panel').innerHTML='<div class="detail-empty">Click a task node to view details</div>';
+  }catch{}
+}
+
+async function selectSimple(id){
+  try{
+    const d=await fetchJ('/api/simple/runs/'+id);
+    const c=d.item_counts||{};
+    document.getElementById('detail-panel').innerHTML=`<div class="detail-grid"><div class="key">Run ID</div><div class="val">${d.run_id.slice(0,12)}</div><div class="key">Status</div><div class="val"><span class="badge ${badgeClass(d.status)}">${d.status}</span></div><div class="key">Started</div><div class="val">${fmtT(d.started_at)}</div><div class="key">Instruction</div><div class="val" style="grid-column:1/-1">${d.instruction||'-'}</div></div><h3 style="margin-top:16px;font-size:12px;color:var(--muted);text-transform:uppercase">Item Status</h3><div class="detail-grid" style="margin-top:8px">${Object.entries(c).map(([k,v])=>`<div class="key">${k}</div><div class="val">${v}</div>`).join('')}</div>`;
+  }catch{}
+}
+
+// ── Cost Panel ──
+function updateCostPanel(){
+  const el=document.getElementById('cost-panel');
+  if(!selectedRunTasks.length){el.innerHTML='<div class="detail-empty">No tasks</div>';return}
+  const byProvider={};
+  selectedRunTasks.forEach(t=>{
+    const p=t.provider_used||t.model_used||'unknown';
+    if(!byProvider[p])byProvider[p]={cost:0,tokens:0,tasks:0};
+    byProvider[p].cost+=t.cost_usd||0;byProvider[p].tasks++;
+  });
+  const maxCost=Math.max(...Object.values(byProvider).map(v=>v.cost),0.001);
+  const total=Object.values(byProvider).reduce((s,v)=>s+v.cost,0);
+  let html='<div class="bar-chart">';
+  Object.entries(byProvider).sort((a,b)=>b[1].cost-a[1].cost).forEach(([name,v])=>{
+    const pct=Math.round(v.cost/maxCost*100);
+    const color=PROVIDER_COLORS[name]||'#58a6ff';
+    html+=`<div class="bar-row"><div class="bar-label">${name}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}">${v.tasks} tasks</div></div><div class="bar-value">${fmtC(v.cost)}</div></div>`;
+  });
+  html+=`</div><div style="margin-top:12px;text-align:right;font-size:13px;color:var(--muted)">Total: <strong style="color:var(--text)">${fmtC(total)}</strong></div>`;
+  el.innerHTML=html;
+}
+
+// ── Failure Panel ──
+function updateFailurePanel(){
+  const el=document.getElementById('failure-panel');
+  if(!selectedRunTasks.length){el.innerHTML='<div class="detail-empty">No tasks</div>';return}
+  const failed=selectedRunTasks.filter(t=>['failed','blocked'].includes((t.status||'').toLowerCase()));
+  if(!failed.length){
+    const running=selectedRunTasks.filter(t=>(t.status||'').toLowerCase()==='running').length;
+    el.innerHTML=`<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">✓</div><div style="color:var(--green);font-size:16px;font-weight:600">No failures</div><div style="color:var(--muted);margin-top:8px">${selectedRunTasks.length} tasks total${running?', '+running+' still running':''}</div></div>`;
+    return;
+  }
+  // Group errors by prefix
+  const groups={};
+  failed.forEach(t=>{
+    const msg=(t.error||'Unknown error').split('\n')[0].slice(0,80);
+    const key=msg.replace(/\d+/g,'N').slice(0,40);
+    if(!groups[key])groups[key]={count:0,sample:msg,tasks:[]};
+    groups[key].count++;groups[key].tasks.push(t.task_id);
+  });
+  let html=`<div style="margin-bottom:12px;font-size:13px;color:var(--muted)">${failed.length} failed / ${selectedRunTasks.length} total</div><div class="error-list">`;
+  Object.entries(groups).sort((a,b)=>b[1].count-a[1].count).forEach(([_,v])=>{
+    html+=`<div class="error-row"><span class="error-count">${v.count}</span><span class="error-msg" title="${v.tasks.join(', ')}">${v.sample}</span></div>`;
+  });
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+// ── DAG Canvas (topological layout) ──
+const canvas=document.getElementById('dag-canvas');
+const ctx=canvas.getContext('2d');
+let dagNodes=[],dagEdges=[],hoveredNode=null;
+
+function resizeCanvas(){const r=canvas.parentElement.getBoundingClientRect();canvas.width=r.width-40;canvas.height=280}
+
+function topoSort(tasks){
+  const idMap={};tasks.forEach((t,i)=>idMap[t.task_id]=i);
+  const adj=Array.from({length:tasks.length},()=>[]);
+  const inDeg=new Array(tasks.length).fill(0);
+  tasks.forEach((t,i)=>{
+    (t.depends_on||[]).forEach(d=>{
+      if(idMap[d]!==undefined){adj[idMap[d]].push(i);inDeg[i]++}
+    });
+  });
+  // Kahn's algorithm
+  const queue=[];const layers=[];
+  inDeg.forEach((d,i)=>{if(d===0)queue.push(i)});
+  while(queue.length){
+    layers.push([...queue]);
+    const next=[];
+    queue.forEach(n=>{adj[n].forEach(m=>{inDeg[m]--;if(inDeg[m]===0)next.push(m)})});
+    queue.length=0;queue.push(...next);
+  }
+  // Nodes not in any layer (cycles) — add them
+  const placed=new Set(layers.flat());
+  tasks.forEach((_,i)=>{if(!placed.has(i))layers.push([i])});
+  return layers;
+}
+
+function buildDagLayout(tasks){
+  if(!tasks.length){dagNodes=[];dagEdges=[];return}
+  const layers=topoSort(tasks);
+  const maxLayer=Math.max(...layers.map(l=>l.length));
+  const xStep=(canvas.width-100)/Math.max(layers.length-1,1);
+  const yBase=canvas.height/2;
+  dagNodes=[];
+  layers.forEach((layer,li)=>{
+    const yOff=(layer.length-1)*30;
+    layer.forEach((ni,si)=>{
+      dagNodes[ni]={
+        x:50+li*xStep,
+        y:yBase-yOff+si*60,
+        r:20,task:tasks[ni],
+        label:tasks[ni].task_id.slice(0,12),
+      };
+    });
+  });
+  // Build edges from depends_on
+  const idMap={};tasks.forEach((t,i)=>idMap[t.task_id]=i);
+  dagEdges=[];
+  tasks.forEach((t,i)=>{(t.depends_on||[]).forEach(d=>{if(idMap[d]!==undefined)dagEdges.push([idMap[d],i])})});
+}
+
+function drawDag(){
+  resizeCanvas();
+  buildDagLayout(selectedRunTasks);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(!selectedRunTasks.length){
+    ctx.fillStyle='#8b949e';ctx.font='14px -apple-system, sans-serif';ctx.textAlign='center';
+    ctx.fillText('Select a run to view DAG',canvas.width/2,canvas.height/2);return;
+  }
+  // Edges
+  ctx.strokeStyle='#30363d';ctx.lineWidth=2;
+  dagEdges.forEach(([f,t])=>{
+    const a=dagNodes[f],b=dagNodes[t];if(!a||!b)return;
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    const ang=Math.atan2(b.y-a.y,b.x-a.x);
+    const ax=b.x-Math.cos(ang)*(b.r+4),ay=b.y-Math.sin(ang)*(b.r+4);
+    ctx.beginPath();ctx.moveTo(ax,ay);
+    ctx.lineTo(ax-8*Math.cos(ang-0.4),ay-8*Math.sin(ang-0.4));
+    ctx.lineTo(ax-8*Math.cos(ang+0.4),ay-8*Math.sin(ang+0.4));
+    ctx.closePath();ctx.fillStyle='#30363d';ctx.fill();
+  });
+  // Nodes
+  dagNodes.forEach((n,i)=>{
+    if(!n)return;
+    const st=(n.task.status||'').toLowerCase();
+    const col=STATUS_COLOR[st]||'#8b949e';
+    const hov=hoveredNode===i;
+    if(hov){ctx.shadowColor=col;ctx.shadowBlur=12}
+    ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
+    ctx.fillStyle=hov?col:col+'33';ctx.fill();
+    ctx.strokeStyle=col;ctx.lineWidth=hov?3:2;ctx.stroke();
+    ctx.shadowBlur=0;
+    ctx.fillStyle=col;ctx.font='bold 12px -apple-system, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    const icon=st==='success'||st==='completed'?'✓':st==='failed'?'✗':st==='running'?'▶':'•';
+    ctx.fillText(icon,n.x,n.y);
+    ctx.fillStyle='#e6edf3';ctx.font='11px monospace';ctx.textBaseline='top';
+    ctx.fillText(n.label,n.x,n.y+n.r+4);
+  });
+}
+
+canvas.addEventListener('click',e=>{
+  const r=canvas.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  for(let i=0;i<dagNodes.length;i++){const n=dagNodes[i];if(!n)continue;if((mx-n.x)**2+(my-n.y)**2<=n.r**2){showTask(n.task);hoveredNode=i;drawDag();return}}
+});
+canvas.addEventListener('mousemove',e=>{
+  const r=canvas.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  let f=-1;
+  for(let i=0;i<dagNodes.length;i++){const n=dagNodes[i];if(!n)continue;if((mx-n.x)**2+(my-n.y)**2<=n.r**2){f=i;break}}
+  if(f!==hoveredNode){hoveredNode=f;drawDag()}
+  canvas.style.cursor=f>=0?'pointer':'default';
+});
+
+function showTask(t){
+  const p=document.getElementById('detail-panel');
+  let h=`<div class="detail-grid"><div class="key">Task ID</div><div class="val" style="font-family:monospace">${t.task_id}</div><div class="key">Status</div><div class="val"><span class="badge ${badgeClass(t.status)}">${t.status}</span></div><div class="key">Provider</div><div class="val">${t.provider_used||t.model_used||'-'}</div><div class="key">Attempts</div><div class="val">${t.attempt||0}</div><div class="key">Duration</div><div class="val">${fmtD(t.duration_seconds)}</div><div class="key">Cost</div><div class="val">${fmtC(t.cost_usd)}</div><div class="key">Depends On</div><div class="val">${(t.depends_on||[]).join(', ')||'none'}</div><div class="key">Started</div><div class="val">${fmtT(t.started_at)}</div><div class="key">Finished</div><div class="val">${fmtT(t.finished_at)}</div></div>`;
+  if(t.error)h+=`<div class="detail-error">${t.error}</div>`;
+  p.innerHTML=h;
+}
+
+window.addEventListener('resize',()=>{if(selectedRunTasks.length)drawDag()});
+
+// ── SSE ──
+function connectSSE(){
+  if(sseSource){sseSource.close();sseSource=null}
+  try{
+    sseSource=new EventSource('/api/events');
+    sseSource.onmessage=e=>{
+      try{
+        const d=JSON.parse(e.data);
+        if(d.type==='task_update'&&selectedRun&&d.run_id===selectedRun.run_id){
+          const idx=selectedRunTasks.findIndex(t=>t.task_id===d.task_id);
+          if(idx>=0)Object.assign(selectedRunTasks[idx],d);
+          drawDag();
+        }
+      }catch{}
+    };
+    sseSource.onopen=()=>{document.getElementById('sse-dot').className='sse-indicator sse-live'};
+    sseSource.onerror=()=>{document.getElementById('sse-dot').className='sse-indicator sse-off'};
+  }catch{document.getElementById('sse-dot').className='sse-indicator sse-off'}
+}
+
+refresh();setInterval(refresh,3000);connectSSE();
+</script>
+</body>
+</html>

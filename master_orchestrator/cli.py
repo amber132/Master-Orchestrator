@@ -236,17 +236,31 @@ def _print_json_error(command: str, error: str) -> None:
 
 def _add_log_args(parser: argparse.ArgumentParser) -> None:
     """给子命令统一添加 --log-file 和 --log-dir 参数。"""
-    parser.add_argument("--log-file", default=None, help="Path to JSON Lines log file")
+    parser.add_argument("--log-file", default=None, help="JSON Lines 日志文件路径")
     parser.add_argument(
         "--log-dir", default=None,
-        help="Directory for log output (auto-generates timestamped filename)",
+        help="日志输出目录，会自动生成带时间戳的文件名",
     )
 
 
 def _add_pool_args(parser: argparse.ArgumentParser) -> None:
     """给子命令添加 failover pool 相关参数。"""
-    parser.add_argument("--pool-config", default=None, help="Path to failover_pool.toml")
-    parser.add_argument("--pool-profile", default=None, help="Force a specific pool profile for this execution")
+    parser.add_argument("--pool-config", default=None, help="failover_pool.toml 配置路径")
+    parser.add_argument("--pool-profile", default=None, help="为本次执行强制指定 pool profile")
+
+
+def _localize_argparse(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """把 argparse 默认帮助文案本地化为中文。"""
+    parser._positionals.title = "位置参数"
+    parser._optionals.title = "选项"
+    original_format_usage = parser.format_usage
+    original_format_help = parser.format_help
+    parser.format_usage = lambda: original_format_usage().replace("usage:", "用法:", 1)  # type: ignore[method-assign]
+    parser.format_help = lambda: original_format_help().replace("usage:", "用法:", 1)  # type: ignore[method-assign]
+    for action in parser._actions:
+        if "-h" in action.option_strings and "--help" in action.option_strings:
+            action.help = "显示帮助信息并退出"
+    return parser
 
 
 def _resolve_discovery_config(base: DiscoveryConfig, args: argparse.Namespace) -> DiscoveryConfig:
@@ -449,7 +463,7 @@ def _resolve_self_improve_auto_config(args: argparse.Namespace, config) -> "Auto
 # ── SIGTERM 信号处理 ──
 
 _shutdown_requested = False
-_VISIBLE_COMMANDS = "{do,runs,improve}"
+_VISIBLE_COMMANDS = "{do,runs,improve,dashboard}"
 _DAG_INPUT_SUFFIXES = {".toml", ".py"}
 _PROVIDER_COMMAND_CHOICES = ("do", "runs", "improve")
 
@@ -473,229 +487,229 @@ def _add_auto_parser_args(
     positional_help: str,
 ) -> None:
     parser.add_argument(positional_name, nargs="?", default="", help=positional_help)
-    parser.add_argument("-d", "--dir", default=".", help="Project working directory")
-    parser.add_argument("--provider", choices=["auto", "claude", "codex"], default="auto", help="Preferred execution provider")
+    parser.add_argument("-d", "--dir", default=".", help="项目工作目录")
+    parser.add_argument("--provider", choices=["auto", "claude", "codex"], default="auto", help="首选执行 provider")
     parser.add_argument(
         "--phase-provider",
         action="append",
         default=[],
         metavar="PHASE=PROVIDER",
-        help="Override provider for a phase, e.g. execute=codex",
+        help="覆盖某个阶段的 provider，例如 execute=codex",
     )
-    parser.add_argument("--doc", nargs="*", default=[], help="Optional document paths that define the task")
+    parser.add_argument("--doc", nargs="*", default=[], help="定义任务的可选文档路径")
     parser.add_argument(
         "--mode",
         choices=["auto", "simple", "surgical"],
         default="auto",
-        help="Execution mode: auto=parallel DAG, simple=single task, surgical=iterate-fix-verify",
+        help="执行模式：auto=并行 DAG，simple=单任务，surgical=迭代修复验证",
     )
     _add_pool_args(parser)
-    parser.add_argument("-y", "--yes", action="store_true", help="Skip preview confirmation and start immediately")
-    parser.add_argument("--max-hours", type=float, default=None, help="Max hours to run (default: from config, fallback 24)")
-    parser.add_argument("--max-iterations", type=int, default=None, help="Max total iterations (default: from config, fallback 50)")
+    parser.add_argument("-y", "--yes", action="store_true", help="跳过预览确认并立即开始")
+    parser.add_argument("--max-hours", type=float, default=None, help="最大运行小时数（默认来自配置，兜底 24）")
+    parser.add_argument("--max-iterations", type=int, default=None, help="最大总迭代次数（默认来自配置，兜底 50）")
     parser.add_argument(
         "--max-phase-iterations", type=int, default=None,
-        help="Max iterations per phase (default: adaptive by complexity)",
+        help="每个阶段的最大迭代次数（默认按复杂度自适应）",
     )
     parser.add_argument(
         "--phase-parallelism", type=int, default=None,
-        help="Max number of phases to execute in parallel (default: 8)",
+        help="最大并行执行阶段数（默认 8）",
     )
     parser.add_argument(
         "--convergence-threshold", type=float, default=None,
-        help="Stop threshold for review score (default: adaptive by complexity)",
+        help="审查分数停止阈值（默认按复杂度自适应）",
     )
     parser.add_argument(
         "--convergence-window", type=int, default=None,
-        help="Plateau detection window (default: adaptive by complexity)",
+        help="停滞检测窗口（默认按复杂度自适应）",
     )
     parser.add_argument(
         "--score-improvement-min", type=float, default=None,
-        help="Minimum score delta treated as meaningful improvement (default: adaptive by complexity)",
+        help="视为有效改进的最小分数变化（默认按复杂度自适应）",
     )
     parser.add_argument(
         "--disable-adaptive-tuning", action="store_true",
-        help="Keep manual convergence settings and skip complexity-based retuning",
+        help="保留手动收敛设置，跳过基于复杂度的自适应调参",
     )
     parser.add_argument(
         "--max-execution-processes",
         type=int,
         default=None,
-        help="Hard cap for real concurrent claude exec processes in auto mode (default: from config, 0 disables)",
+        help="auto 模式下真实并发 claude exec 进程硬上限（默认来自配置，0 表示禁用限制）",
     )
     _add_log_args(parser)
-    parser.add_argument("--resume", action="store_true", help="Resume from saved goal_state.json")
-    parser.add_argument("--runtime-dir", default=None, help="Reuse an existing runtime directory when resuming")
+    parser.add_argument("--resume", action="store_true", help="从已保存的 goal_state.json 恢复")
+    parser.add_argument("--runtime-dir", default=None, help="恢复时复用已有 runtime 目录")
     parser.add_argument(
         "--quality-gate", nargs="*", default=None, metavar="CMD",
-        help="Quality gate commands to run before AI review (e.g. 'pytest -x' 'ruff check .')",
+        help="AI 审查前运行的质量门禁命令，例如 'pytest -x' 'ruff check .'",
     )
     parser.add_argument(
         "--gather", action="store_true",
-        help="Enable requirement gathering before goal decomposition",
+        help="目标分解前启用需求收集",
     )
     parser.add_argument(
         "--gather-mode", choices=["interactive", "file", "auto"], default=None,
-        help="Gathering mode: interactive (CLI Q&A), file (read from JSON), auto (AI answers)",
+        help="需求收集模式：interactive=CLI 问答，file=读取 JSON，auto=AI 自动回答",
     )
     parser.add_argument(
         "--gather-max-rounds", type=int, default=None,
-        help="Max clarification rounds for requirement gathering (default: from config.toml)",
+        help="需求澄清最大轮数（默认来自 config.toml）",
     )
     parser.add_argument(
         "--gather-file", default=None,
-        help="Path to pre-filled answers JSON file (for --gather-mode file)",
+        help="预填答案 JSON 文件路径（用于 --gather-mode file）",
     )
     parser.add_argument(
         "--skip-gather", action="store_true",
-        help="Explicitly skip requirement gathering (overrides config.toml global setting)",
+        help="显式跳过需求收集（覆盖 config.toml 全局设置）",
     )
     parser.add_argument(
         "--architecture-mode",
         choices=["auto", "off", "required"],
         default="auto",
-        help="Architecture layer mode: auto trigger, off, or required",
+        help="架构层模式：auto=自动触发，off=关闭，required=强制启用",
     )
     parser.add_argument(
         "--architecture-pattern",
         default=None,
-        help="Preferred architecture pattern for the architecture layer",
+        help="架构层首选架构模式",
     )
     parser.add_argument(
         "--architecture-deliberation",
         choices=["deterministic", "advisory"],
         default="deterministic",
-        help="Architecture council mode: deterministic synthesis or advisory multi-role board",
+        help="架构委员会模式：deterministic=确定性综合，advisory=多角色建议板",
     )
-    parser.add_argument("--files", nargs="+", action="append", default=[], help="Simple mode explicit files or directories")
-    parser.add_argument("--glob", nargs="+", action="append", default=[], dest="globs", help="Simple mode glob patterns")
-    parser.add_argument("--task-file", default=None, help="Simple mode CSV or JSONL task file")
-    parser.add_argument("--prompt-file", default=None, help="Simple mode prompt file")
-    parser.add_argument("--isolate", choices=["none", "copy", "worktree"], default=None, help="Simple mode isolation mode")
+    parser.add_argument("--files", nargs="+", action="append", default=[], help="Simple 模式显式文件或目录")
+    parser.add_argument("--glob", nargs="+", action="append", default=[], dest="globs", help="Simple 模式 glob 匹配模式")
+    parser.add_argument("--task-file", default=None, help="Simple 模式 CSV 或 JSONL 任务文件")
+    parser.add_argument("--prompt-file", default=None, help="Simple 模式 prompt 文件")
+    parser.add_argument("--isolate", choices=["none", "copy", "worktree"], default=None, help="Simple 模式隔离模式")
 
 
 def _add_self_improve_parser_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("-d", "--dir", default=".", help="Project working directory (contains goal_state.json, db)")
-    parser.add_argument("--provider", choices=["auto", "claude", "codex"], default="auto", help="Preferred execution provider")
+    parser.add_argument("-d", "--dir", default=".", help="项目工作目录（包含 goal_state.json 和数据库）")
+    parser.add_argument("--provider", choices=["auto", "claude", "codex"], default="auto", help="首选执行 provider")
     parser.add_argument(
         "--phase-provider",
         action="append",
         default=[],
         metavar="PHASE=PROVIDER",
-        help="Override provider for a phase, e.g. review=claude",
+        help="覆盖某个阶段的 provider，例如 review=claude",
     )
     parser.add_argument(
         "--source", nargs="*", default=[], metavar="URL_OR_FILE",
-        help="External documents to scan for improvement ideas",
+        help="用于扫描改进建议的外部文档",
     )
     parser.add_argument("--approval-mode", choices=["interactive", "file"], default="interactive")
-    parser.add_argument("--approval-file", default=None, help="Path for file-based approval")
-    parser.add_argument("--plan-file", default=None, help="Path to a JSON improvement plan that seeds proposals")
-    parser.add_argument("--plan-phase", default=None, help="Optional phase tag filter when loading --plan-file")
+    parser.add_argument("--approval-file", default=None, help="基于文件审批时使用的文件路径")
+    parser.add_argument("--plan-file", default=None, help="用于生成提案种子的 JSON 改进计划路径")
+    parser.add_argument("--plan-phase", default=None, help="加载 --plan-file 时可选的阶段标签过滤器")
     parser.add_argument(
         "--quality-gate", nargs="*", default=None, metavar="CMD",
-        help="Test commands to run before/after improvement",
+        help="改进前后运行的测试命令",
     )
-    parser.add_argument("--monitor-required", action="store_true", help="Run required flow-matrix gate after each self-improve round")
-    parser.add_argument("--monitor-flow", action="append", default=[], metavar="FLOW_ID", help="Append one or more flow-matrix smoke flows to the monitoring gate")
+    parser.add_argument("--monitor-required", action="store_true", help="每轮 self-improve 后运行 required flow-matrix 门禁")
+    parser.add_argument("--monitor-flow", action="append", default=[], metavar="FLOW_ID", help="把一个或多个 flow-matrix smoke flow 加入监控门禁")
     parser.add_argument("--max-hours", type=float, default=2.0)
     parser.add_argument("--max-iterations", type=int, default=10)
     _add_log_args(parser)
-    parser.add_argument("--skip-introspection", action="store_true", help="Skip run history analysis")
-    parser.add_argument("--skip-external", action="store_true", help="Skip external document scanning")
-    parser.add_argument("--discover", action="store_true", help="Enable auto-discovery of relevant blog posts")
+    parser.add_argument("--skip-introspection", action="store_true", help="跳过运行历史分析")
+    parser.add_argument("--skip-external", action="store_true", help="跳过外部文档扫描")
+    parser.add_argument("--discover", action="store_true", help="启用相关博客文章自动发现")
     parser.add_argument(
         "--smart-discover", action="store_true",
-        help="Let AI analyze the project first, then decide search keywords and templates (implies --discover)",
+        help="先让 AI 分析项目，再决定搜索关键词和模板（隐含 --discover）",
     )
     parser.add_argument(
         "--keywords", nargs="*", default=[], metavar="KW",
-        help="Extra keywords for auto-discovery search",
+        help="自动发现搜索的额外关键词",
     )
     parser.add_argument(
         "--rss-feed", nargs="*", default=[], metavar="URL",
-        help="Extra RSS/Atom feed URLs for auto-discovery",
+        help="自动发现使用的额外 RSS/Atom feed URL",
     )
-    parser.add_argument("--discover-max", type=int, default=20, help="Max URLs to discover (default: 20)")
+    parser.add_argument("--discover-max", type=int, default=20, help="最多发现的 URL 数量（默认 20）")
     parser.add_argument(
         "--search-template", default="{keyword} best practices",
-        help='Search query template, use {keyword} as placeholder (default: "{keyword} best practices")',
+        help="搜索查询模板，使用 {keyword} 作为占位符",
     )
     parser.add_argument(
         "--search-provider",
         nargs="+",
         default=None,
         metavar="NAME",
-        help="Override enabled search providers, e.g. duckduckgo_html brave_web rss",
+        help="覆盖启用的搜索 provider，例如 duckduckgo_html brave_web rss",
     )
     parser.add_argument(
         "--disable-search-provider",
         nargs="+",
         default=None,
         metavar="NAME",
-        help="Disable one or more configured search providers",
+        help="禁用一个或多个已配置搜索 provider",
     )
     parser.add_argument(
         "--min-source-score",
         type=float,
         default=None,
-        help="Minimum trust score required before external scanning",
+        help="外部扫描前要求的最低信任分",
     )
     parser.add_argument(
         "--max-hits-per-provider",
         type=int,
         default=None,
-        help="Max normalized hits to keep per provider query",
+        help="每个 provider 查询保留的最大归一化命中数",
     )
     parser.add_argument(
         "--disable-discovery-research",
         action="store_true",
-        help="Disable the anchor/contradiction-driven research loop inside discovery",
+        help="禁用 discovery 内部由锚点/矛盾驱动的研究循环",
     )
     parser.add_argument(
         "--research-iterations",
         type=int,
         default=None,
-        help="Number of contradiction-driven research rounds to run after the first discovery pass",
+        help="首轮 discovery 后运行的矛盾驱动研究轮数",
     )
     parser.add_argument(
         "--research-probe-budget",
         type=int,
         default=None,
-        help="Maximum number of follow-up probe queries generated by discovery research",
+        help="discovery research 生成的最大后续探测查询数",
     )
     parser.add_argument(
         "--research-max-leads",
         type=int,
         default=None,
-        help="Maximum number of structured anchors to keep per discovery run",
+        help="每次 discovery run 保留的最大结构化锚点数",
     )
     parser.add_argument(
         "--sogou-cookie-header",
         default=None,
-        help="Cookie header used when resolving sogou wechat article links",
+        help="解析搜狗微信文章链接时使用的 Cookie header",
     )
     parser.add_argument(
         "--sogou-cookie-file",
         default=None,
-        help="Cookie file (JSON/Netscape) used when resolving sogou wechat article links",
+        help="解析搜狗微信文章链接时使用的 Cookie 文件（JSON/Netscape）",
     )
     parser.add_argument(
         "--sogou-storage-state",
         default=None,
-        help="Playwright storage state JSON used when resolving sogou wechat article links",
+        help="解析搜狗微信文章链接时使用的 Playwright storage state JSON",
     )
     parser.add_argument(
         "--rounds", type=int, default=1,
-        help="Number of self-improve rounds to run (default: 1). Each round re-discovers and re-analyzes.",
+        help="要运行的 self-improve 轮数（默认 1）。每轮都会重新发现并重新分析。",
     )
     parser.add_argument(
         "--auto-approve", action="store_true",
-        help="Automatically approve all proposals without interactive confirmation",
+        help="不经过交互确认，自动批准所有提案",
     )
     parser.add_argument(
         "--round-delay", type=int, default=30,
-        help="Seconds to wait between rounds (default: 30)",
+        help="轮次之间等待的秒数（默认 30）",
     )
 
 
@@ -806,54 +820,54 @@ def _prune_hidden_subcommands(subparsers: argparse._SubParsersAction) -> None:
     subparsers._choices_actions = [
         action
         for action in subparsers._choices_actions
-        if getattr(action, "dest", "") in {"do", "runs", "improve"}
+        if getattr(action, "dest", "") in {"do", "runs", "improve", "dashboard"}
     ]
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _localize_argparse(argparse.ArgumentParser(
         prog="master-orchestrator",
-        description="Master Orchestrator - unify Claude Code and Codex CLI workflows",
-        epilog="Preferred commands: do, runs, improve. Legacy commands remain available for compatibility.",
-    )
-    parser.add_argument("-c", "--config", default=None, help="Path to config.toml")
+        description="Master Orchestrator - 统一 Claude Code 和 Codex CLI 工作流",
+        epilog="推荐命令：do、runs、improve、dashboard。历史命令仍保留用于兼容。",
+    ))
+    parser.add_argument("-c", "--config", default=None, help="config.toml 路径")
     sub = parser.add_subparsers(dest="command", required=True, metavar=_VISIBLE_COMMANDS)
 
-    do_p = sub.add_parser("do", help="Unified execution entrypoint")
+    do_p = _localize_argparse(sub.add_parser("do", help="统一执行入口"))
     _add_auto_parser_args(
         do_p,
         positional_name="target",
-        positional_help="Goal text, @document, or DAG path",
+        positional_help="目标文本、@文档 或 DAG 路径",
     )
-    do_p.add_argument("--run-id", default=None, help="Run ID to resume when dispatching to DAG resume")
+    do_p.add_argument("--run-id", default=None, help="分派到 DAG resume 时要恢复的运行 ID")
     do_p.add_argument(
         "--rate-limit", type=int, default=None, metavar="N",
-        help="Max requests per minute when dispatching to DAG run",
+        help="分派到 DAG run 时每分钟最大请求数",
     )
     do_p.add_argument(
         "--error-policy", choices=["fail-fast", "continue-on-error", "skip-downstream"], default=None,
-        help="Default error handling policy when dispatching to DAG run",
+        help="分派到 DAG run 时的默认错误处理策略",
     )
     do_p.add_argument(
         "--enable-streaming", action="store_true",
-        help="Enable streaming event logs when dispatching to DAG run",
+        help="分派到 DAG run 时启用流式事件日志",
     )
 
-    runs_p = sub.add_parser("runs", help="Run management entrypoint")
-    runs_p.add_argument("dag", nargs="?", default="", help="Optional DAG file for resume, retry, or graph views")
-    runs_p.add_argument("-d", "--dir", default=None, help="Working directory for DAG resume or retry")
+    runs_p = _localize_argparse(sub.add_parser("runs", help="运行管理入口"))
+    runs_p.add_argument("dag", nargs="?", default="", help="用于 resume、retry 或 graph 查看时的可选 DAG 文件")
+    runs_p.add_argument("-d", "--dir", default=None, help="DAG resume 或 retry 的工作目录")
     _add_log_args(runs_p)
     _add_pool_args(runs_p)
-    runs_p.add_argument("--run-id", default=None, help="Run ID (default: latest)")
-    runs_p.add_argument("--json", action="store_true", dest="as_json", help="Output status as JSON")
-    runs_p.add_argument("--resume", action="store_true", help="Resume a DAG run")
-    runs_p.add_argument("--retry", action="store_true", help="Retry failed tasks in a DAG run")
-    runs_p.add_argument("--graph", action="store_true", help="Show DAG structure")
+    runs_p.add_argument("--run-id", default=None, help="运行 ID（默认 latest）")
+    runs_p.add_argument("--json", action="store_true", dest="as_json", help="以 JSON 输出状态")
+    runs_p.add_argument("--resume", action="store_true", help="恢复 DAG run")
+    runs_p.add_argument("--retry", action="store_true", help="重试 DAG run 中失败的任务")
+    runs_p.add_argument("--graph", action="store_true", help="显示 DAG 结构")
 
-    improve_p = sub.add_parser("improve", help="Project self-improvement workflow")
+    improve_p = _localize_argparse(sub.add_parser("improve", help="项目自我改进工作流"))
     _add_self_improve_parser_args(improve_p)
 
-    claude_p = sub.add_parser("claude", help=argparse.SUPPRESS)
+    claude_p = _localize_argparse(sub.add_parser("claude", help=argparse.SUPPRESS))
     claude_p.add_argument(
         "provider_command",
         choices=[
@@ -863,7 +877,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     claude_p.add_argument("provider_args", nargs=argparse.REMAINDER)
 
-    codex_p = sub.add_parser("codex", help=argparse.SUPPRESS)
+    codex_p = _localize_argparse(sub.add_parser("codex", help=argparse.SUPPRESS))
     codex_p.add_argument(
         "provider_command",
         choices=[
@@ -874,65 +888,70 @@ def _build_parser() -> argparse.ArgumentParser:
     codex_p.add_argument("provider_args", nargs=argparse.REMAINDER)
 
     # run
-    run_p = sub.add_parser("run", help=argparse.SUPPRESS)
-    run_p.add_argument("dag", help="Path to DAG file (.toml or .py)")
-    run_p.add_argument("-d", "--dir", default=None, help="Working directory for tasks")
+    run_p = _localize_argparse(sub.add_parser("run", help=argparse.SUPPRESS))
+    run_p.add_argument("dag", help="DAG 文件路径（.toml 或 .py）")
+    run_p.add_argument("-d", "--dir", default=None, help="任务工作目录")
     _add_log_args(run_p)
     _add_pool_args(run_p)
     run_p.add_argument(
         "--rate-limit", type=int, default=None, metavar="N",
-        help="Max requests per minute (overrides config.toml rate_limit.requests_per_minute)",
+        help="每分钟最大请求数（覆盖 config.toml 的 rate_limit.requests_per_minute）",
     )
     run_p.add_argument(
         "--error-policy", choices=["fail-fast", "continue-on-error", "skip-downstream"], default=None,
-        help="Default error handling policy for tasks without explicit error_policy",
+        help="没有显式 error_policy 的任务所使用的默认错误处理策略",
     )
     run_p.add_argument(
         "--enable-streaming", action="store_true",
-        help="Enable streaming event logs to Store.stream_events table",
+        help="把流式事件日志写入 Store.stream_events 表",
     )
 
     # resume
-    resume_p = sub.add_parser("resume", help=argparse.SUPPRESS)
-    resume_p.add_argument("dag", help="Path to DAG file (.toml or .py)")
-    resume_p.add_argument("--run-id", default=None, help="Run ID to resume (default: latest)")
-    resume_p.add_argument("-d", "--dir", default=None, help="Working directory for tasks")
+    resume_p = _localize_argparse(sub.add_parser("resume", help=argparse.SUPPRESS))
+    resume_p.add_argument("dag", help="DAG 文件路径（.toml 或 .py）")
+    resume_p.add_argument("--run-id", default=None, help="要恢复的运行 ID（默认 latest）")
+    resume_p.add_argument("-d", "--dir", default=None, help="任务工作目录")
     _add_log_args(resume_p)
     _add_pool_args(resume_p)
 
     # retry-failed
-    retry_p = sub.add_parser("retry-failed", help=argparse.SUPPRESS)
-    retry_p.add_argument("dag", help="Path to DAG file (.toml or .py)")
-    retry_p.add_argument("--run-id", default=None, help="Run ID (default: latest)")
-    retry_p.add_argument("-d", "--dir", default=None, help="Working directory for tasks")
+    retry_p = _localize_argparse(sub.add_parser("retry-failed", help=argparse.SUPPRESS))
+    retry_p.add_argument("dag", help="DAG 文件路径（.toml 或 .py）")
+    retry_p.add_argument("--run-id", default=None, help="运行 ID（默认 latest）")
+    retry_p.add_argument("-d", "--dir", default=None, help="任务工作目录")
     _add_log_args(retry_p)
     _add_pool_args(retry_p)
 
     # status
-    status_p = sub.add_parser("status", help=argparse.SUPPRESS)
-    status_p.add_argument("--run-id", default=None, help="Run ID (default: latest)")
-    status_p.add_argument("--json", action="store_true", dest="as_json", help="Output as JSON")
+    status_p = _localize_argparse(sub.add_parser("status", help=argparse.SUPPRESS))
+    status_p.add_argument("--run-id", default=None, help="运行 ID（默认 latest）")
+    status_p.add_argument("--json", action="store_true", dest="as_json", help="以 JSON 输出")
 
     # visualize
-    viz_p = sub.add_parser("visualize", help=argparse.SUPPRESS)
-    viz_p.add_argument("dag", help="Path to DAG file (.toml or .py)")
-    viz_p.add_argument("--run-id", default=None, help="Overlay status from a run")
+    viz_p = _localize_argparse(sub.add_parser("visualize", help=argparse.SUPPRESS))
+    viz_p.add_argument("dag", help="DAG 文件路径（.toml 或 .py）")
+    viz_p.add_argument("--run-id", default=None, help="叠加某次 run 的状态")
 
     # auto
-    auto_p = sub.add_parser("auto", help=argparse.SUPPRESS)
+    auto_p = _localize_argparse(sub.add_parser("auto", help=argparse.SUPPRESS))
     _add_auto_parser_args(
         auto_p,
         positional_name="goal",
-        positional_help="Goal description in natural language",
+        positional_help="自然语言目标描述",
     )
 
     # self-improve
-    si_p = sub.add_parser("self-improve", help=argparse.SUPPRESS)
+    si_p = _localize_argparse(sub.add_parser("self-improve", help=argparse.SUPPRESS))
     _add_self_improve_parser_args(si_p)
 
     from .simple_cli import add_simple_subcommands
 
     add_simple_subcommands(sub, _add_log_args, hidden=True)
+
+    dashboard_p = _localize_argparse(sub.add_parser("dashboard", help="启动 Web Dashboard"))
+    dashboard_p.add_argument("--port", type=int, default=9100, help="服务端口（默认 9100）")
+    dashboard_p.add_argument("--no-open", action="store_true", help="不要自动打开浏览器")
+
     _prune_hidden_subcommands(sub)
 
     return parser
@@ -1740,6 +1759,38 @@ def _cmd_visualize(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_dashboard(args: argparse.Namespace) -> int:
+    """启动 Web Dashboard。"""
+    import webbrowser
+    from .health_server import HealthServer
+    from .store import Store
+    from .config import load_config
+
+    config = load_config(args.config, project_dir=None) if args.config else load_config()
+    db_path = config.checkpoint.db_path if hasattr(config, "checkpoint") and config.checkpoint else None
+    store = Store(db_path) if db_path else Store()
+
+    server = HealthServer(port=args.port, store=store)
+    server.start()
+
+    url = f"http://127.0.0.1:{args.port}/dashboard"
+    if not args.no_open:
+        webbrowser.open(url)
+
+    print(f"Dashboard running at {url}")
+    print("Press Ctrl+C to stop")
+
+    try:
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+        server.stop()
+        store.close()
+    return 0
+
+
 def main() -> int:
     # 注册 SIGTERM 信号处理器，使外部守护进程能触发优雅关闭
     if os.name != "nt":
@@ -1779,6 +1830,7 @@ def main() -> int:
         "do": _cmd_auto,
         "runs": _cmd_status,
         "improve": _cmd_self_improve,
+        "dashboard": _cmd_dashboard,
     }
 
     handler = handlers.get(args.command)

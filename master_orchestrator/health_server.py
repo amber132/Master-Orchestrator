@@ -10,12 +10,16 @@
 import json
 import logging
 import os
+import re
 import tempfile
 import threading
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .store import Store
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +40,26 @@ _dashboard_lock = threading.Lock()
 _persist_lock = threading.Lock()
 _last_persist_time: float = 0.0
 _PERSIST_INTERVAL: float = 10.0
+
+# SSE 事件队列（供实时推送）
+_sse_event_queue: list[dict[str, Any]] = []
+_sse_lock = threading.Lock()
+_SSE_MAX_EVENTS = 200
+
+
+def publish_event(event_type: str, data: dict[str, Any]) -> None:
+    """发布 SSE 事件，供前端实时订阅。"""
+    event = {"type": event_type, "ts": time.time(), **data}
+    with _sse_lock:
+        _sse_event_queue.append(event)
+        if len(_sse_event_queue) > _SSE_MAX_EVENTS:
+            _sse_event_queue.pop(0)
+
+
+def _get_sse_events_since(since_ts: float) -> list[dict[str, Any]]:
+    """获取指定时间戳之后的 SSE 事件。"""
+    with _sse_lock:
+        return [e for e in _sse_event_queue if e.get("ts", 0) > since_ts]
 
 
 def _persist_dashboard_state_sync() -> None:
@@ -236,10 +260,11 @@ refresh();setInterval(refresh,3000);
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
-    """处理 /health, /metrics, /api/status, /dashboard 请求。"""
+    """处理 /health, /metrics, /api/status, /dashboard, /api/runs, /api/simple/runs 请求。"""
 
     # 由 HealthServer 注入
     _start_time: float = 0.0
+    _store: "Store | None" = None
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/health":
@@ -248,9 +273,24 @@ class _HealthHandler(BaseHTTPRequestHandler):
             self._respond_metrics()
         elif self.path == "/api/status":
             self._respond_api_status()
-        elif self.path == "/dashboard":
+        elif self.path == "/dashboard" or self.path == "/dashboard/":
             self._respond_dashboard()
+        elif self.path == "/api/runs":
+            self._respond_api_runs()
+        elif self.path == "/api/simple/runs":
+            self._respond_api_simple_runs()
+        elif self.path == "/api/events":
+            self._respond_sse()
         else:
+            # 带路径参数的端点
+            m = re.match(r"^/api/runs/([^/]+)$", self.path)
+            if m:
+                self._respond_api_run_detail(m.group(1))
+                return
+            m = re.match(r"^/api/simple/runs/([^/]+)$", self.path)
+            if m:
+                self._respond_api_simple_run_detail(m.group(1))
+                return
             self.send_error(404)
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
@@ -264,6 +304,133 @@ class _HealthHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _respond_api_runs(self) -> None:
+        if not self._store:
+            self._send_json({"error": "store not available"})
+            return
+        runs = self._store.list_runs(limit=50)
+        result = []
+        for r in runs:
+            tasks = self._store.get_all_task_results(r.run_id)
+            task_counts: dict[str, int] = {}
+            for t in tasks.values():
+                task_counts[t.status.value] = task_counts.get(t.status.value, 0) + 1
+            result.append({
+                "run_id": r.run_id,
+                "dag_name": r.dag_name,
+                "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "total_cost_usd": r.total_cost_usd,
+                "task_counts": task_counts,
+                "task_total": len(tasks),
+            })
+        self._send_json({"runs": result})
+
+    def _respond_api_run_detail(self, run_id: str) -> None:
+        if not self._store:
+            self._send_json({"error": "store not available"})
+            return
+        run = self._store.get_run(run_id)
+        if not run:
+            self.send_error(404, "Run not found")
+            return
+        tasks = self._store.get_all_task_results(run_id)
+        deps = self._store.get_task_dependencies(run_id)
+        task_list = []
+        for tid, t in tasks.items():
+            task_list.append({
+                "task_id": tid,
+                "status": t.status.value if hasattr(t.status, "value") else str(t.status),
+                "attempt": t.attempt,
+                "cost_usd": t.cost_usd,
+                "model_used": t.model_used,
+                "started_at": t.started_at.isoformat() if t.started_at else None,
+                "finished_at": t.finished_at.isoformat() if t.finished_at else None,
+                "duration_seconds": t.duration_seconds,
+                "error": t.error,
+                "provider_used": t.provider_used if hasattr(t, "provider_used") else "",
+                "depends_on": deps.get(tid, []),
+            })
+        self._send_json({
+            "run_id": run.run_id,
+            "dag_name": run.dag_name,
+            "status": run.status.value if hasattr(run.status, "value") else str(run.status),
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "total_cost_usd": run.total_cost_usd,
+            "tasks": task_list,
+        })
+
+    def _respond_api_simple_runs(self) -> None:
+        if not self._store:
+            self._send_json({"error": "store not available"})
+            return
+        runs = self._store.list_simple_runs()
+        result = []
+        for r in runs[:50]:
+            counts = self._store.get_simple_item_counts(r.run_id)
+            result.append({
+                "run_id": r.run_id,
+                "instruction": r.instruction_template[:100] if r.instruction_template else "",
+                "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "item_counts": counts,
+                "total_items": sum(counts.values()),
+            })
+        self._send_json({"runs": result})
+
+    def _respond_sse(self) -> None:
+        """SSE 端点：长轮询模式，每秒检查新事件。"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+        last_ts = time.time() - 1.0
+        try:
+            for _ in range(300):  # 最多保持 5 分钟连接
+                events = _get_sse_events_since(last_ts)
+                for ev in events:
+                    data = json.dumps(ev, ensure_ascii=False)
+                    self.wfile.write(f"data: {data}\n\n".encode())
+                    self.wfile.flush()
+                    last_ts = ev.get("ts", last_ts)
+                time.sleep(1)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+
+    def _respond_api_simple_run_detail(self, run_id: str) -> None:
+        if not self._store:
+            self._send_json({"error": "store not available"})
+            return
+        run = self._store.get_simple_run(run_id)
+        if not run:
+            self.send_error(404, "Simple run not found")
+            return
+        counts = self._store.get_simple_item_counts(run_id)
+        items = self._store.get_simple_items(run_id)
+        item_list = []
+        for item in items[:200]:
+            item_list.append({
+                "item_id": item.item_id,
+                "target": item.target,
+                "status": item.status.value if hasattr(item.status, "value") else str(item.status),
+                "bucket": item.bucket,
+            })
+        self._send_json({
+            "run_id": run.run_id,
+            "instruction": run.instruction_template,
+            "status": run.status.value if hasattr(run.status, "value") else str(run.status),
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "item_counts": counts,
+            "items": item_list,
+        })
 
     def _respond_health(self) -> None:
         uptime = time.time() - self._start_time
@@ -297,7 +464,13 @@ class _HealthHandler(BaseHTTPRequestHandler):
         self._send_json(state)
 
     def _respond_dashboard(self) -> None:
-        body = _DASHBOARD_HTML.encode("utf-8")
+        # 优先读取外部 web/index.html 文件，不存在时降级到内联 HTML
+        web_file = Path(__file__).parent / "web" / "index.html"
+        try:
+            html = web_file.read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError):
+            html = _DASHBOARD_HTML
+        body = html.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -308,11 +481,12 @@ class _HealthHandler(BaseHTTPRequestHandler):
 class HealthServer:
     """后台线程运行的轻量 HTTP 健康检查服务器。"""
 
-    def __init__(self, port: int = 9100, bind: str = "127.0.0.1") -> None:
+    def __init__(self, port: int = 9100, bind: str = "127.0.0.1", store: "Store | None" = None) -> None:
         self._port = port
         self._bind = bind
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._store = store
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -320,8 +494,9 @@ class HealthServer:
         # 启动前从持久化文件恢复上次的 Dashboard 状态
         load_dashboard_state()
         _HealthHandler._start_time = time.time()
+        _HealthHandler._store = self._store
         try:
-            self._server = HTTPServer((self._bind, self._port), _HealthHandler)
+            self._server = ThreadingHTTPServer((self._bind, self._port), _HealthHandler)
         except OSError as exc:
             logger.warning("健康检查端口 %d 绑定失败: %s", self._port, exc)
             return
