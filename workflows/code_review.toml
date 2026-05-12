@@ -1,5 +1,5 @@
-# Example DAG: Code review pipeline
-# Run with: python -m claude_orchestrator run workflows/code_review.toml
+# 示例 DAG：代码审查流水线
+# 运行方式：python -m claude_orchestrator run workflows/code_review.toml
 
 [meta]
 name = "code-review-pipeline"
@@ -9,56 +9,56 @@ max_parallel = 3
 max_attempts = 2
 backoff_base = 15.0
 
-# ── Tasks ──
+# ── 任务 ──
 
 [tasks.analyze_structure]
-prompt = """Analyze the project structure in the current directory.
-List all source files, their purposes, and the overall architecture.
-Return JSON: {"files": [{"path": "...", "purpose": "..."}], "architecture": "..."}"""
+prompt = """分析当前目录的项目结构。
+列出所有源码文件、各自用途，以及整体架构。
+返回 JSON：{"files": [{"path": "...", "purpose": "..."}], "architecture": "..."}"""
 timeout = 120
 output_format = "json"
 
 [tasks.find_bugs]
-prompt = """Review the codebase for potential bugs and issues.
-Focus on: null pointer risks, race conditions, resource leaks, error handling gaps.
-Project structure: ${analyze_structure.output}
-Return JSON: {"bugs": [{"file": "...", "line": 0, "severity": "high|medium|low", "description": "..."}]}"""
+prompt = """审查代码库中潜在的 bug 和质量问题。
+重点关注：空指针风险、竞态条件、资源泄漏、错误处理缺口。
+项目结构：${analyze_structure.output}
+返回 JSON：{"bugs": [{"file": "...", "line": 0, "severity": "high|medium|low", "description": "..."}]}"""
 depends_on = ["analyze_structure"]
 timeout = 300
 output_format = "json"
 
 [tasks.check_security]
-prompt = """Perform a security review of the codebase.
-Check for: hardcoded secrets, SQL injection, XSS, insecure dependencies, auth issues.
-Project structure: ${analyze_structure.output}
-Return JSON: {"issues": [{"file": "...", "severity": "critical|high|medium|low", "type": "...", "description": "..."}]}"""
+prompt = """对代码库做安全审查。
+检查：硬编码密钥、SQL 注入、XSS、不安全依赖、认证鉴权问题。
+项目结构：${analyze_structure.output}
+返回 JSON：{"issues": [{"file": "...", "severity": "critical|high|medium|low", "type": "...", "description": "..."}]}"""
 depends_on = ["analyze_structure"]
 timeout = 300
 output_format = "json"
 
 [tasks.suggest_improvements]
-prompt = """Suggest code quality improvements for the codebase.
-Consider: readability, maintainability, performance, testing, documentation.
-Project structure: ${analyze_structure.output}
-Return JSON: {"suggestions": [{"file": "...", "category": "...", "description": "...", "priority": "high|medium|low"}]}"""
+prompt = """为代码库提出代码质量改进建议。
+考虑：可读性、可维护性、性能、测试、文档。
+项目结构：${analyze_structure.output}
+返回 JSON：{"suggestions": [{"file": "...", "category": "...", "description": "...", "priority": "high|medium|low"}]}"""
 depends_on = ["analyze_structure"]
 timeout = 300
 output_format = "json"
 
 [tasks.generate_report]
-prompt = """Generate a comprehensive code review report combining all findings.
+prompt = """汇总所有发现，生成完整代码审查报告。
 
-Bug findings: ${find_bugs.output}
-Security issues: ${check_security.output}
-Improvement suggestions: ${suggest_improvements.output}
+Bug 发现：${find_bugs.output}
+安全问题：${check_security.output}
+改进建议：${suggest_improvements.output}
 
-Create a well-structured markdown report with:
-1. Executive summary
-2. Critical issues (bugs + security)
-3. Improvement recommendations
-4. Priority action items
+请生成结构清晰的 Markdown 报告，包含：
+1. 执行摘要
+2. 关键问题（bug + 安全）
+3. 改进建议
+4. 优先行动项
 
-Return the report as a JSON object: {"report": "...markdown content..."}"""
+返回 JSON 对象：{"report": "...markdown content..."}"""
 depends_on = ["find_bugs", "check_security", "suggest_improvements"]
 timeout = 300
 output_format = "json"

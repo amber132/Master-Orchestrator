@@ -1,4 +1,4 @@
-# Master Orchestrator — example configuration
+# Master Orchestrator 示例配置
 
 [orchestrator]
 max_parallel = 150

@@ -1,28 +1,28 @@
 {
   "name": "example_llm_workflow",
-  "description": "Example workflow in LLM-friendly JSON format",
+  "description": "适合 LLM 读取的 JSON 工作流示例",
   "tasks": [
     {
       "id": "analyze",
-      "instruction": "Analyze the codebase structure and identify key components",
+      "instruction": "分析代码库结构，识别关键组件",
       "inputs": [],
       "outputs": ["refactor", "document"]
     },
     {
       "id": "refactor",
-      "instruction": "Refactor the identified components based on analysis results",
+      "instruction": "根据分析结果重构已识别的组件",
       "inputs": ["analyze"],
       "outputs": ["test"]
     },
     {
       "id": "document",
-      "instruction": "Generate documentation for the analyzed components",
+      "instruction": "为已分析组件生成文档",
       "inputs": ["analyze"],
       "outputs": ["review"]
     },
     {
       "id": "test",
-      "instruction": "Run tests to verify refactored code works correctly",
+      "instruction": "运行测试，验证重构后的代码行为正确",
       "inputs": ["refactor"],
       "outputs": ["review"],
       "loop": {
@@ -33,7 +33,7 @@
     },
     {
       "id": "review",
-      "instruction": "Review all changes and generate summary report",
+      "instruction": "审查全部改动并生成汇总报告",
       "inputs": ["document", "test"],
       "outputs": []
     }

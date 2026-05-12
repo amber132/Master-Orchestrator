@@ -1,4 +1,4 @@
-# Simple Mode
+# Simple 模式
 
 `simple` 模式服务“海量独立 work-item，高吞吐，强覆盖，轻推理”的任务。
 
@@ -17,12 +17,12 @@
 
 核心流程：
 
-1. ingest work-items
-2. bucket and schedule
-3. execute via `codex exec`
-4. run lightweight validation pipeline
-5. retry failures
-6. emit manifest and coverage summary
+1. 摄取 work-item
+2. 分桶并调度
+3. 通过 `codex exec` 执行
+4. 运行轻量验证管线
+5. 重试失败项
+6. 输出 manifest 和覆盖率汇总
 
 运行控制：
 

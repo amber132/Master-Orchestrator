@@ -1,7 +1,7 @@
-# Backend Refactor Constitution
+# 后端重构约束
 
-- Keep behavior unchanged unless a failing test proves the old behavior is wrong.
-- Touch the smallest backend surface that resolves the identified issue.
-- Run targeted tests before widening the change.
-- Prefer moving logic into existing modules over adding new abstraction layers.
-- Stop if the task expands beyond the stated backend scope.
+- 除非失败测试证明旧行为错误，否则保持现有行为不变。
+- 只触碰解决当前问题所需的最小后端范围。
+- 先运行聚焦测试，再扩大改动范围。
+- 优先把逻辑移动到现有模块中，避免新增不必要的抽象层。
+- 如果任务超出声明的后端范围，先停止并重新确认边界。

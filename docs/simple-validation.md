@@ -1,4 +1,4 @@
-# Simple Validation
+# Simple 验证
 
 `simple` 模式使用固定顺序的多级验证管线：
 

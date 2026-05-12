@@ -18,84 +18,98 @@ from .simple_status import render_simple_status_json, render_simple_status_text
 from .store import Store
 
 
+def _localize_argparse(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """把 argparse 默认帮助文案本地化为中文。"""
+    parser._positionals.title = "位置参数"
+    parser._optionals.title = "选项"
+    original_format_usage = parser.format_usage
+    original_format_help = parser.format_help
+    parser.format_usage = lambda: original_format_usage().replace("usage:", "用法:", 1)  # type: ignore[method-assign]
+    parser.format_help = lambda: original_format_help().replace("usage:", "用法:", 1)  # type: ignore[method-assign]
+    for action in parser._actions:
+        if "-h" in action.option_strings and "--help" in action.option_strings:
+            action.help = "显示帮助信息并退出"
+    return parser
+
+
 def add_simple_subcommands(
     subparsers: argparse._SubParsersAction,
     add_log_args,
     *,
     hidden: bool = False,
 ) -> None:
-    simple_p = subparsers.add_parser(
+    simple_p = _localize_argparse(subparsers.add_parser(
         "simple",
-        help=argparse.SUPPRESS if hidden else "High-throughput work-item execution mode",
-    )
+        help=argparse.SUPPRESS if hidden else "高吞吐 work-item 执行模式",
+    ))
     simple_sub = simple_p.add_subparsers(dest="simple_command", required=True)
 
-    run_p = simple_sub.add_parser("run", help="Run simple mode tasks")
+    run_p = _localize_argparse(simple_sub.add_parser("run", help="运行 simple 模式任务"))
     _add_simple_run_args(run_p, add_log_args)
 
-    scan_p = simple_sub.add_parser("scan", help="Preview simple mode tasks without executing")
+    scan_p = _localize_argparse(simple_sub.add_parser("scan", help="预览 simple 模式任务但不执行"))
     _add_simple_run_args(scan_p, add_log_args, include_instruction=False)
-    scan_p.add_argument("instruction", nargs="?", default="", help="Instruction template")
-    scan_p.add_argument("--json", action="store_true", dest="as_json", help="Output scan report as JSON")
+    scan_p.add_argument("instruction", nargs="?", default="", help="指令模板")
+    scan_p.add_argument("--json", action="store_true", dest="as_json", help="以 JSON 输出扫描报告")
 
-    resume_p = simple_sub.add_parser("resume", help="Resume a simple run")
-    resume_p.add_argument("--run-id", required=True, help="Simple run id")
+    resume_p = _localize_argparse(simple_sub.add_parser("resume", help="恢复 simple run"))
+    resume_p.add_argument("--run-id", required=True, help="Simple run ID")
     add_log_args(resume_p)
 
-    retry_p = simple_sub.add_parser("retry", help="Retry failed items in a simple run")
-    retry_p.add_argument("--run-id", required=True, help="Simple run id")
+    retry_p = _localize_argparse(simple_sub.add_parser("retry", help="重试 simple run 中失败的 item"))
+    retry_p.add_argument("--run-id", required=True, help="Simple run ID")
     add_log_args(retry_p)
 
-    cancel_p = simple_sub.add_parser("cancel", help="Cancel a simple run and block unfinished items")
-    cancel_p.add_argument("--run-id", required=True, help="Simple run id")
-    cancel_p.add_argument("--reason", default="", help="Optional cancellation reason")
-    cancel_p.add_argument("--no-kill-processes", action="store_false", dest="kill_processes", help="Do not terminate matched runner/exec processes")
-    cancel_p.add_argument("--force-close", action="store_true", help="Mark the run cancelled even if matching processes are still alive")
-    cancel_p.add_argument("--grace-seconds", type=float, default=5.0, help="Grace period before force-kill matched processes")
-    cancel_p.add_argument("--kill-timeout-seconds", type=float, default=2.0, help="Timeout after force-kill before giving up")
-    cancel_p.add_argument("--dry-run", action="store_true", help="Preview matching processes and state changes without modifying anything")
-    cancel_p.add_argument("--json", action="store_true", dest="as_json", help="Output JSON")
+    cancel_p = _localize_argparse(simple_sub.add_parser("cancel", help="取消 simple run 并阻塞未完成 item"))
+    cancel_p.add_argument("--run-id", required=True, help="Simple run ID")
+    cancel_p.add_argument("--reason", default="", help="可选取消原因")
+    cancel_p.add_argument("--no-kill-processes", action="store_false", dest="kill_processes", help="不要终止匹配的 runner/exec 进程")
+    cancel_p.add_argument("--force-close", action="store_true", help="即使匹配进程仍存活，也把 run 标记为 cancelled")
+    cancel_p.add_argument("--grace-seconds", type=float, default=5.0, help="强制结束匹配进程前的宽限秒数")
+    cancel_p.add_argument("--kill-timeout-seconds", type=float, default=2.0, help="强制结束后等待的超时秒数")
+    cancel_p.add_argument("--dry-run", action="store_true", help="只预览匹配进程和状态变更，不实际修改")
+    cancel_p.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
     add_log_args(cancel_p)
 
-    reconcile_p = simple_sub.add_parser("reconcile", help="Recover a stale simple run by resetting transient items")
-    reconcile_p.add_argument("--run-id", required=True, help="Simple run id")
+    reconcile_p = _localize_argparse(simple_sub.add_parser("reconcile", help="通过重置临时 item 恢复陈旧 simple run"))
+    reconcile_p.add_argument("--run-id", required=True, help="Simple run ID")
     reconcile_p.add_argument(
         "--item-status",
         choices=[SimpleItemStatus.READY.value, SimpleItemStatus.BLOCKED.value, SimpleItemStatus.FAILED.value, SimpleItemStatus.SKIPPED.value],
         default=SimpleItemStatus.READY.value,
-        help="Status to apply to transient items while reconciling",
+        help="reconcile 时应用到临时 item 的状态",
     )
     reconcile_p.add_argument(
         "--run-status",
         choices=[SimpleRunStatus.FAILED.value, SimpleRunStatus.CANCELLED.value],
         default=SimpleRunStatus.FAILED.value,
-        help="Final run status after reconciliation",
+        help="reconcile 后的最终 run 状态",
     )
-    reconcile_p.add_argument("--reason", default="", help="Optional reconciliation reason")
-    reconcile_p.add_argument("--force", action="store_true", help="Reconcile even if matching processes are still alive")
-    reconcile_p.add_argument("--dry-run", action="store_true", help="Preview reconciliation without modifying anything")
-    reconcile_p.add_argument("--json", action="store_true", dest="as_json", help="Output JSON")
+    reconcile_p.add_argument("--reason", default="", help="可选 reconcile 原因")
+    reconcile_p.add_argument("--force", action="store_true", help="即使匹配进程仍存活也执行 reconcile")
+    reconcile_p.add_argument("--dry-run", action="store_true", help="只预览 reconcile，不实际修改")
+    reconcile_p.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
     add_log_args(reconcile_p)
 
-    status_p = simple_sub.add_parser("status", help="Show simple run status")
-    status_p.add_argument("--run-id", default=None, help="Simple run id (default: latest)")
-    status_p.add_argument("--json", action="store_true", dest="as_json", help="Output JSON")
+    status_p = _localize_argparse(simple_sub.add_parser("status", help="显示 simple run 状态"))
+    status_p.add_argument("--run-id", default=None, help="Simple run ID（默认 latest）")
+    status_p.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
 
-    manifest_p = simple_sub.add_parser("manifest", help="Print or export simple run manifest")
-    manifest_p.add_argument("--run-id", default=None, help="Simple run id (default: latest)")
-    manifest_p.add_argument("--out", default=None, help="Write manifest JSON to file")
+    manifest_p = _localize_argparse(simple_sub.add_parser("manifest", help="打印或导出 simple run manifest"))
+    manifest_p.add_argument("--run-id", default=None, help="Simple run ID（默认 latest）")
+    manifest_p.add_argument("--out", default=None, help="把 manifest JSON 写入文件")
 
 
 def _add_simple_run_args(parser: argparse.ArgumentParser, add_log_args, *, include_instruction: bool = True) -> None:
     if include_instruction:
-        parser.add_argument("instruction", nargs="?", default="", help="Instruction template for each work item")
-    parser.add_argument("-d", "--dir", default=".", help="Project working directory")
-    parser.add_argument("--provider", choices=["auto", "claude", "codex"], default="auto", help="Preferred execution provider")
-    parser.add_argument("--files", nargs="+", action="append", default=[], help="Explicit files or directories")
-    parser.add_argument("--glob", nargs="+", action="append", default=[], dest="globs", help="Glob patterns relative to project dir")
-    parser.add_argument("--task-file", default=None, help="CSV or JSONL task file")
-    parser.add_argument("--prompt-file", default=None, help="Read instruction template from file")
-    parser.add_argument("--isolate", choices=["none", "copy", "worktree"], default=None, help="Isolation mode")
+        parser.add_argument("instruction", nargs="?", default="", help="每个 work item 的指令模板")
+    parser.add_argument("-d", "--dir", default=".", help="项目工作目录")
+    parser.add_argument("--provider", choices=["auto", "claude", "codex"], default="auto", help="首选执行 provider")
+    parser.add_argument("--files", nargs="+", action="append", default=[], help="显式指定文件或目录")
+    parser.add_argument("--glob", nargs="+", action="append", default=[], dest="globs", help="相对于项目目录的 glob 匹配模式")
+    parser.add_argument("--task-file", default=None, help="CSV 或 JSONL 任务文件")
+    parser.add_argument("--prompt-file", default=None, help="从文件读取指令模板")
+    parser.add_argument("--isolate", choices=["none", "copy", "worktree"], default=None, help="隔离模式")
     add_log_args(parser)
 
 

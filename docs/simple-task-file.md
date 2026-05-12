@@ -1,4 +1,4 @@
-# Simple Task File
+# Simple 任务文件
 
 `simple --task-file` 支持 `jsonl` 和 `csv`。
 

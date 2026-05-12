@@ -1,59 +1,58 @@
-# How I Made Claude Code and Codex Collaborate on Large Coding Tasks — Master Orchestrator
+# 我如何让 Claude Code 和 Codex 协作完成大型编码任务 - Master Orchestrator
 
-> This post introduces Master Orchestrator's design motivation, architecture, and real-world results. Suitable for Medium, Dev.to, or Hacker News "Show HN".
+> 这篇文章介绍 Master Orchestrator 的设计动机、架构思路和实际效果。原来的英文草稿已转为中文，方便面向中文社区发布。
 
 ---
 
-## The Problem: Single-Agent Ceiling
+## 问题：单 Agent 的天花板
 
-If you've used Claude Code or Codex for anything beyond trivial tasks, you've hit these walls:
+如果你用 Claude Code 或 Codex 处理过稍微复杂一点的任务，大概率会遇到这些问题：
 
-**Context overflow.** A 15-file refactor — by file 8, the agent forgets what it changed in file 2. Imports break. Interfaces mismatch.
+**上下文溢出。** 一个涉及 15 个文件的重构，跑到第 8 个文件时，Agent 已经忘了第 2 个文件改过什么，最后 import 断裂、接口不一致。
 
-**Sequential bottleneck.** 100 independent lint fixes, each taking 30 seconds. That's 50 minutes for something embarrassingly parallel.
+**串行瓶颈。** 100 个独立 lint 修复，每个 30 秒，串行跑完就是 50 分钟。明明这些任务可以并行。
 
-**Wrong tool for the job.** Planning needs strong reasoning (Claude). Bulk code generation needs speed (Codex). Using one model for everything compromises both.
+**工具错配。** 规划需要强推理能力，批量代码生成需要速度和吞吐。让同一个模型处理所有阶段，两边都会妥协。
 
-**Manual orchestration.** You become the scheduler — run agent 1, check output, feed to agent 2, check again. That's not automation.
+**人工编排。** 你变成调度器：启动第一个 Agent，检查输出，再喂给第二个，再检查。这不是自动化。
 
-## The Idea: DAG-Based Multi-Agent Orchestration
+## 思路：基于 DAG 的多 Agent 编排
 
-The core insight: **decompose a goal into a directed acyclic graph (DAG) of sub-tasks, then auto-schedule execution across the best agent for each phase.**
+核心思路很直接：**把一个目标拆成有向无环图（DAG）子任务，再自动按阶段调度给最合适的 Agent。**
 
 ```
-Goal: "Add JWT auth to Express app"
+目标："给 Express 应用添加 JWT 鉴权"
         │
         ▼
    ┌─────────────┐
-   │ Decompose    │  Claude (strong reasoning)
-   │ (plan tasks) │
+   │ 分解任务     │  Claude（推理强）
+   │ 生成计划     │
    └──────┬──────┘
           │
     ┌─────┼─────┬─────────┐
     ▼     ▼     ▼         ▼
-  Mid-  Utils  Routes   Tests
-  dle- (codex) (codex)  (codex)  ← parallel
-  ware
+  中间件  工具   路由      测试
+ (Codex) (Codex) (Codex) (Codex)  ← 并行
     │     │     │         │
     └─────┼─────┘         │
           ▼               │
-       Review             │  Claude (strong analysis)
+        审查              │  Claude（分析强）
           │               │
           └───────┬───────┘
                   ▼
-            Integration
+                集成
 ```
 
-- **Planning** → Claude (better reasoning)
-- **Execution** → Codex (faster generation)
-- **Review** → Claude (better at finding issues)
-- **Independent tasks** → automatic parallelism
+- **规划**：Claude 更适合依赖分析和任务拆解
+- **执行**：Codex 更适合快速生成和批量改动
+- **审查**：Claude 更适合推理正确性和发现遗漏
+- **独立任务**：自动并行执行
 
-## Architecture
+## 架构
 
-### Provider Routing
+### Provider 路由
 
-Each pipeline phase binds to a different AI provider:
+每个流水线阶段都可以绑定不同 AI provider：
 
 ```toml
 [routing.phase_defaults]
@@ -63,75 +62,75 @@ review = "claude"
 simple = "codex"
 ```
 
-Override per-task or per-phase:
+也可以按任务或阶段覆盖：
 
 ```bash
-mo do --provider codex "implement pagination"
-mo do --phase-provider execute=codex --phase-provider review=claude "refactor payments"
+mo do --provider codex "实现分页接口"
+mo do --phase-provider execute=codex --phase-provider review=claude "重构支付模块"
 ```
 
-### DAG Scheduler
+### DAG 调度器
 
-The scheduler maintains a task dependency graph:
+调度器维护任务依赖图：
 
-1. Find all nodes with zero in-degree (no incomplete dependencies)
-2. Execute them in parallel (up to 150 concurrent)
-3. On completion, update the graph and unlock downstream tasks
-4. Repeat until all tasks complete or fail
+1. 找出入度为 0 的节点，也就是没有未完成依赖的任务。
+2. 并行执行这些任务，最高支持 150 并发。
+3. 任务完成后更新图，解锁下游任务。
+4. 重复执行，直到所有任务完成或失败。
 
-### Error Classification
+### 错误分类
 
-Not all errors deserve the same retry strategy:
+不是所有错误都应该用同一种重试策略：
 
-| Error | Strategy |
-|-------|----------|
-| Rate limit | Exponential backoff with jitter |
-| Context overflow | Auto-compact context, retry with shorter prompt |
-| Transient | Up to 10 retries, 30s base backoff |
-| Provider down | Fallback to alternate provider (auto mode) |
-| Task failure | Propagate to dependents, skip unreachable |
+| 错误 | 策略 |
+| --- | --- |
+| 限流 | 带抖动的指数退避 |
+| 上下文溢出 | 自动压缩上下文，缩短 prompt 后重试 |
+| 临时失败 | 最多重试 10 次，默认 30 秒基础退避 |
+| Provider 不可用 | auto 模式下切换备用 provider |
+| 任务失败 | 向依赖任务传播失败，跳过不可达任务 |
 
-### Simple Mode: Bulk Execution Engine
+### Simple 模式：批量执行引擎
 
-For "100 files need the same small fix" tasks:
+对于"100 个文件都要做同一个小改动"这类任务：
 
-- 16 parallel workers
-- Automatic retry on failures
-- Syntax validation
-- Crash recovery (`simple resume` after power loss)
+- 16 个并发 worker
+- 失败自动重试
+- 语法验证
+- 崩溃恢复，断电后可用 `simple resume` 继续
 
 ```bash
 mo simple run --manifest fixes.jsonl
-mo simple resume  # continue after interruption
-mo simple retry   # retry only failures
+mo simple resume  # 中断后继续
+mo simple retry   # 只重试失败项
 ```
 
-## Real-World Results
+## 实际效果
 
-**JWT auth feature** — 6 tasks, 4 parallel, completed in 4m 23s with 0 failures.
+**JWT 鉴权功能**：6 个任务，4 个并行，用时 4 分 23 秒，失败 0 个。
 
-**Bulk lint fix** — 147 files, 16 workers, 8 minutes (vs. 40+ minutes sequential).
+**批量 lint 修复**：147 个文件，16 个 worker，8 分钟完成，串行预计超过 40 分钟。
 
-**Cross-module refactor** — 15 files across 3 packages. DAG ensured correct ordering. Claude review caught 3 edge cases that Codex missed.
+**跨模块重构**：3 个包、15 个文件。DAG 确保执行顺序正确，Claude 审查发现了 3 个 Codex 执行时遗漏的边界情况。
 
-## Tech Stack
+## 技术栈
 
-- Python 3.11+ (asyncio for concurrent scheduling)
-- Pydantic (data models, config validation)
-- SQLite (lightweight state persistence)
-- TOML (human-friendly configuration)
+- Python 3.11+，使用 asyncio 做并发调度
+- Pydantic，负责数据模型和配置校验
+- SQLite，负责轻量状态持久化
+- TOML，提供可读的配置文件
 
-## Try It
+## 试用
 
 ```bash
 git clone https://github.com/amber132/Master-Orchestrator.git
 cd Master-Orchestrator
 pip install -e ".[dev]"
-mo do "your goal here"
+mo do "你的目标"
 ```
 
-Requires Python 3.11+ and at least one of `claude` or `codex` on PATH.
+需要 Python 3.11+，并且 PATH 中至少能使用 `claude` 或 `codex`。
 
 ---
 
-*Master Orchestrator is open source under MIT. Contributions welcome.*
+*Master Orchestrator 基于 MIT 开源，欢迎贡献。*

@@ -1,4 +1,4 @@
-# Simple Isolation
+# Simple 隔离
 
 支持三种模式：
 

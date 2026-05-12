@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "master-orchestrator"
 version = "0.1.0"
-description = "Unified DAG orchestrator for Claude Code and Codex CLI workflows"
+description = "面向 Claude Code 和 Codex CLI 工作流的统一 DAG 多 Agent 编排器"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 readme = "README.md"

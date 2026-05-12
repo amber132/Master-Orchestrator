@@ -2,58 +2,59 @@
 
 # Master Orchestrator
 
-**Let Claude Code and Codex collaborate on your large-scale coding tasks.**
+**让 Claude Code 和 Codex 协作处理大型编码任务。**
 
-Automatically decompose goals into DAGs, execute tasks in parallel across multiple AI agents, and converge on verified results.
+自动把目标拆成 DAG 任务图，跨多个 AI Agent 并行执行，并收敛到可验证的交付结果。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![GitHub Stars](https://img.shields.io/github/stars/amber132/Master-Orchestrator.svg)](https://github.com/amber132/Master-Orchestrator/stargazers)
 
-[Quick Start](#quick-start) | [Why Master Orchestrator?](#why-master-orchestrator) | [How It Works](#how-it-works) | [Documentation](#documentation)
+[快速开始](#快速开始) | [为什么需要 Master Orchestrator](#为什么需要-master-orchestrator) | [工作原理](#工作原理) | [文档](#文档)
 
 </div>
 
 ---
 
-## The Problem
+## 问题
 
-You're working on a task that's too big for a single AI agent call:
+你正在处理一个单次 AI Agent 调用很难稳住的大任务：
 
-- "Add JWT auth to this Express app — with tests, middleware, and docs"
-- "Refactor the payment module — 15 files across 3 packages"
-- "Fix all failing tests after the database migration"
+- "给这个 Express 应用加 JWT 鉴权，包括测试、中间件和文档"
+- "重构支付模块，涉及 3 个包、15 个文件"
+- "数据库迁移后，把所有失败测试修好"
 
-A single `claude` or `codex` session gets lost in context, misses dependencies, or produces inconsistent code across files. You end up manually coordinating multiple runs, checking outputs, and stitching results together.
+单个 `claude` 或 `codex` 会遇到上下文漂移、依赖遗漏、跨文件改动不一致等问题。最后你只能自己反复启动多个会话、检查输出、拼接结果。
 
-## The Solution
+## 方案
 
-Master Orchestrator turns one natural-language goal into a **directed acyclic graph (DAG)** of tasks, then executes them with the best AI agent for each phase:
+Master Orchestrator 把一个自然语言目标转换成**有向无环图（DAG）**任务，再按阶段选择最合适的 AI Agent 执行：
 
 ```bash
-mo do "Add JWT authentication to the Express app with middleware, routes, tests, and API docs"
+mo do "给 Express 应用添加 JWT 鉴权，包括中间件、路由、测试和 API 文档"
 ```
 
-It automatically:
-1. **Decomposes** your goal into dependent sub-tasks (Claude excels here)
-2. **Routes** each task to the optimal provider (Claude for reasoning, Codex for execution)
-3. **Executes** independent tasks in parallel (up to 150 concurrent)
-4. **Reviews** outputs with cross-agent verification
-5. **Retries** failures with exponential backoff and error classification
-6. **Converges** on a verified, consistent result
+它会自动完成：
 
-## Why Master Orchestrator?
+1. **任务分解**：把目标拆成有依赖关系的子任务，规划阶段默认交给 Claude
+2. **阶段路由**：按任务类型选择 provider，例如 Claude 负责推理，Codex 负责执行
+3. **并行执行**：没有依赖冲突的任务并行跑，最高支持 150 并发
+4. **交叉审查**：用另一个 Agent 做结果验证和质量门禁
+5. **失败重试**：按错误类型分类，使用指数退避重试
+6. **结果收敛**：合并输出、跑测试、确认最终交付一致
 
-| Scenario | Single Agent | Master Orchestrator |
-|----------|-------------|-------------------|
-| 5-file refactor | Context overflow, inconsistent edits | DAG decomposition, parallel execution |
-| Bulk fixes (100+ files) | Sequential, slow, no retry | Simple mode: 16 parallel workers, auto-retry |
-| Complex feature | Manual coordination of multiple runs | Automatic phase routing, convergence detection |
-| Mixed tasks | Same model for reasoning and coding | Claude for planning, Codex for execution |
+## 为什么需要 Master Orchestrator
 
-## Quick Start
+| 场景 | 单 Agent | Master Orchestrator |
+| --- | --- | --- |
+| 5 个文件的重构 | 容易上下文溢出，改动不一致 | DAG 分解，并行执行 |
+| 100+ 文件批量修复 | 串行、慢、失败后靠手工重跑 | Simple 模式：16 并发、自动重试 |
+| 复杂功能开发 | 人工协调多个会话 | 自动阶段路由，检测收敛状态 |
+| 混合型任务 | 同一个模型同时负责规划和写代码 | Claude 做规划，Codex 做执行 |
 
-### Install
+## 快速开始
+
+### 安装
 
 ```bash
 git clone https://github.com/amber132/Master-Orchestrator.git
@@ -61,137 +62,138 @@ cd Master-Orchestrator
 pip install -e ".[dev]"
 ```
 
-Requires Python 3.11+ and at least one of `claude` or `codex` on your PATH.
+需要 Python 3.11+，并且本机 PATH 中至少能使用 `claude` 或 `codex` 其中之一。
 
-### Your First Orchestrated Task
+### 第一个编排任务
 
 ```bash
-# Let the orchestrator auto-route providers
-mo do "Add input validation to all POST endpoints in src/routes/"
+# 让编排器自动选择 provider
+mo do "给 src/routes/ 下所有 POST 接口补充输入校验"
 
-# Force a specific provider
-mo do --provider codex "Generate unit tests for the UserService class"
+# 强制使用指定 provider
+mo do --provider codex "给 UserService 类生成单元测试"
 
-# Mix providers by phase — Claude plans, Codex executes, Claude reviews
+# 按阶段混用 provider：Claude 规划，Codex 执行，Claude 审查
 mo do \
   --phase-provider decompose=claude \
   --phase-provider execute=codex \
   --phase-provider review=claude \
-  "Refactor the payment module to support multiple currencies"
+  "重构支付模块，让它支持多币种"
 ```
 
-### Bulk Operations with Simple Mode
+### 用 Simple 模式处理批量任务
 
-For hundreds of independent work items (linting, formatting, repetitive edits):
+适合几百个独立工作项，例如 lint 修复、格式化、规则化小改动：
 
 ```bash
-# Scan and execute from a task manifest
+# 从任务清单扫描并执行
 mo simple run --manifest tasks.jsonl
 
-# Resume after interruption
+# 中断后继续
 mo simple resume
 
-# Retry only failures
+# 只重试失败项
 mo simple retry
 ```
 
-Simple mode runs up to **16 parallel workers** with automatic retry, syntax validation, and crash recovery.
+Simple 模式默认最多运行 **16 个并发 worker**，内置自动重试、语法验证和崩溃恢复。
 
-## How It Works
+## 工作原理
 
 ```
                     ┌─────────────────────────────────────────────┐
-                    │              Your Goal (natural language)     │
+                    │            你的目标（自然语言）              │
                     └────────────────────┬────────────────────────┘
                                          │
                     ┌────────────────────▼────────────────────────┐
-                    │         Decompose (Claude)                   │
-                    │   Goal → DAG of dependent sub-tasks          │
+                    │            分解（Claude）                    │
+                    │       目标 → 有依赖关系的 DAG 子任务          │
                     └────────────────────┬────────────────────────┘
                                          │
               ┌──────────────────────────┼──────────────────────────┐
               │                          │                          │
     ┌─────────▼─────────┐    ┌──────────▼──────────┐    ┌─────────▼─────────┐
-    │  Task A (Claude)   │    │  Task B (Codex)      │    │  Task C (Codex)    │
-    │  "Write middleware"│    │  "Write routes"      │    │  "Write tests"     │
+    │  任务 A (Claude)   │    │  任务 B (Codex)      │    │  任务 C (Codex)    │
+    │  "写中间件"        │    │  "写路由"            │    │  "写测试"          │
     └─────────┬─────────┘    └──────────┬──────────┘    └─────────┬─────────┘
               │                          │                          │
               └──────────────────────────┼──────────────────────────┘
                                          │
                     ┌────────────────────▼────────────────────────┐
-                    │         Review (Claude)                      │
-                    │   Cross-agent verification & quality gate     │
+                    │            审查（Claude）                    │
+                    │       跨 Agent 验证与质量门禁                 │
                     └────────────────────┬────────────────────────┘
                                          │
                     ┌────────────────────▼────────────────────────┐
-                    │         Converge                             │
-                    │   Merge results, run tests, verify output     │
+                    │            收敛                              │
+                    │       合并结果、运行测试、验证输出            │
                     └─────────────────────────────────────────────┘
 ```
 
-### Provider Routing
+### Provider 路由
 
-Each phase of the pipeline can use a different AI agent:
+流水线的每个阶段都可以使用不同 AI Agent：
 
-| Phase | Default Provider | Why |
-|-------|-----------------|-----|
-| `decompose` | Claude | Better at planning and dependency analysis |
-| `execute` | Codex | Faster for code generation |
-| `review` | Claude | Better at reasoning about correctness |
-| `discover` | Claude | Better at research and exploration |
-| `simple` | Codex | Optimized for high-throughput bulk tasks |
+| 阶段 | 默认 Provider | 原因 |
+| --- | --- | --- |
+| `decompose` | Claude | 更适合规划和依赖分析 |
+| `execute` | Codex | 更适合高吞吐代码生成 |
+| `review` | Claude | 更适合推理正确性和发现问题 |
+| `discover` | Claude | 更适合调研和探索 |
+| `simple` | Codex | 面向批量任务做了吞吐优化 |
 
-Override at any level:
+可以在不同层级覆盖默认路由：
 
 ```bash
-# Global override
+# 全局指定
 mo do --provider claude "..."
 
-# Per-phase override
+# 按阶段指定
 mo do --phase-provider execute=codex --phase-provider review=claude "..."
 
-# Config file (config.toml)
+# 配置文件 config.toml
 [routing.phase_defaults]
 execute = "codex"
 review = "claude"
 ```
 
-### Error Recovery
+### 错误恢复
 
-The orchestrator classifies errors and applies appropriate strategies:
+编排器会识别错误类型，并选择对应策略：
 
-- **Rate limits** → exponential backoff with jitter
-- **Context overflow** → automatic context compaction and retry
-- **Transient failures** → up to 10 retries with 30s base backoff
-- **Provider down** → fallback to alternate provider (auto mode only)
-- **Task failure** → propagate to dependents, skip unreachable tasks
+- **限流**：指数退避并加入抖动
+- **上下文溢出**：自动压缩上下文后重试
+- **临时失败**：最多重试 10 次，默认 30 秒基础退避
+- **Provider 不可用**：在 auto 模式下切换到备用 provider
+- **任务失败**：向依赖任务传播状态，跳过不可达任务
 
-### Convergence Detection
+### 收敛检测
 
-The system monitors for:
-- **Plateaus** — no progress across iterations → escalate or pivot strategy
-- **Deterioration** — quality declining → rollback to last good state
-- **Regression** — previously passing tests failing → halt and alert
+系统会持续检查：
 
-## Architecture
+- **停滞**：多轮没有进展时升级或切换策略
+- **劣化**：质量下降时回滚到上一个可用状态
+- **回归**：原本通过的测试失败时暂停并提示
+
+## 架构
 
 ```
 master_orchestrator/
-├── orchestrator.py      # Core DAG execution engine
-├── autonomous.py        # Goal-driven autonomous controller
-├── claude_cli.py        # Claude Code integration
-├── codex_cli.py         # Codex CLI integration
-├── simple_runtime.py    # High-throughput bulk execution
-├── config.py            # TOML configuration management
-├── store.py             # SQLite state persistence
-├── scheduler.py         # DAG-aware task scheduling
-├── convergence.py       # Quality convergence detection
-├── error_classifier.py  # Intelligent error categorization
-├── self_improve.py      # Self-improvement loop
-└── cli.py               # Unified CLI surface
+├── orchestrator.py      # DAG 执行核心
+├── autonomous.py        # 目标驱动的自主控制器
+├── claude_cli.py        # Claude Code 集成
+├── codex_cli.py         # Codex CLI 集成
+├── simple_runtime.py    # 高吞吐批量执行
+├── config.py            # TOML 配置管理
+├── store.py             # SQLite 状态持久化
+├── scheduler.py         # 感知 DAG 依赖的任务调度
+├── convergence.py       # 质量收敛检测
+├── error_classifier.py  # 错误分类
+├── self_improve.py      # 自我改进循环
+└── cli.py               # 统一 CLI 入口
 ```
 
-## Configuration
+## 配置
 
 ```toml
 # config.toml
@@ -218,45 +220,49 @@ execute = "codex"
 review = "claude"
 ```
 
-See [config.toml](./config.toml) for a complete example.
+完整示例见 [config.toml](./config.toml)。
 
-## Documentation
+## 文档
 
-| Document | Description |
-|----------|-------------|
-| [USAGE.md](./USAGE.md) | Complete usage guide with examples |
-| [CLI Reference](./docs/CLI_REFERENCE.md) | All commands and options |
-| [Providers & Routing](./docs/providers-and-routing.md) | Provider configuration deep-dive |
-| [Simple Mode](./docs/simple-mode.md) | High-throughput bulk execution |
-| [Simple Validation](./docs/simple-validation.md) | Validation pipeline configuration |
+| 文档 | 说明 |
+| --- | --- |
+| [USAGE.md](./USAGE.md) | 使用指南和示例 |
+| [CLI 参考](./docs/CLI_REFERENCE.md) | 全部命令和参数 |
+| [Provider 与路由](./docs/providers-and-routing.md) | Provider 配置与路由机制 |
+| [Simple 模式](./docs/simple-mode.md) | 高吞吐批量执行模式 |
+| [Simple 验证](./docs/simple-validation.md) | Simple 模式验证管线配置 |
 
-## Use Cases
+## 使用场景
 
-**Feature Development**
+**功能开发**
+
 ```bash
-mo do "Add real-time notifications using WebSocket — include server, client, reconnection logic, and tests"
+mo do "用 WebSocket 添加实时通知，包括服务端、客户端、断线重连逻辑和测试"
 ```
 
-**Codebase Migration**
+**代码迁移**
+
 ```bash
-mo do --phase-provider execute=codex "Migrate all class components to functional components with hooks in src/components/"
+mo do --phase-provider execute=codex "把 src/components/ 下所有 class component 迁移为 hooks 写法"
 ```
 
-**Bulk Fixes**
+**批量修复**
+
 ```bash
 mo simple run --manifest lint-fixes.jsonl
 ```
 
-**Self-Improvement**
+**自我改进**
+
 ```bash
 mo improve -d ./my-project --discover
 ```
 
-## Contributing
+## 参与贡献
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+贡献指南见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
-## License
+## 许可证
 
 [MIT](LICENSE)
 
@@ -264,7 +270,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
 <div align="center">
 
-**If Master Orchestrator helps you ship faster, give it a star!**
+**如果 Master Orchestrator 帮你更快交付，欢迎点一个星标。**
 
 [![Star History Chart](https://api.star-history.com/svg?repos=amber132/Master-Orchestrator&type=Date)](https://star-history.com/#amber132/Master-Orchestrator&Date)
 

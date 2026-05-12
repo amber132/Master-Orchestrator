@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Master Orchestrator — Multi-Agent DAG Orchestration for AI Coding</title>
-  <meta name="description" content="Let Claude Code and Codex collaborate on large-scale coding tasks. Automatically decompose goals, execute in parallel, and converge on verified results.">
+  <title>Master Orchestrator - 面向 AI 编码的多 Agent DAG 编排器</title>
+  <meta name="description" content="让 Claude Code 和 Codex 协作处理大型编码任务。自动分解目标、并行执行任务，并收敛到可验证结果。">
   <style>
     :root {
       --bg: #0d1117;
@@ -19,14 +19,13 @@
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', Helvetica, Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.6;
     }
     .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
 
-    /* Hero */
     .hero {
       text-align: center;
       padding: 80px 0 60px;
@@ -42,7 +41,7 @@
     .hero p {
       font-size: 1.25rem;
       color: var(--muted);
-      max-width: 680px;
+      max-width: 720px;
       margin: 0 auto 32px;
     }
     .hero-buttons { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
@@ -59,7 +58,6 @@
     .btn-primary { background: var(--accent); color: var(--bg); }
     .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
 
-    /* Problem/Solution */
     .section { padding: 60px 0; }
     .section h2 {
       font-size: 2rem;
@@ -89,7 +87,6 @@
     .card p { color: var(--muted); }
     .card .emoji { font-size: 2rem; margin-bottom: 12px; }
 
-    /* Flow diagram */
     .flow {
       display: flex;
       align-items: center;
@@ -109,8 +106,6 @@
     .flow-step .step-label {
       font-size: 0.8rem;
       color: var(--accent);
-      text-transform: uppercase;
-      letter-spacing: 1px;
       margin-bottom: 4px;
     }
     .flow-step .step-name { font-weight: 600; }
@@ -126,7 +121,6 @@
       padding: 0 8px;
     }
 
-    /* Code block */
     .code-block {
       background: var(--card);
       border: 1px solid var(--border);
@@ -136,13 +130,12 @@
       overflow-x: auto;
     }
     .code-block code {
-      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
       font-size: 0.95rem;
       color: var(--green);
     }
     .code-block .comment { color: var(--muted); }
 
-    /* Comparison table */
     table {
       width: 100%;
       border-collapse: collapse;
@@ -156,14 +149,12 @@
     th {
       color: var(--muted);
       font-size: 0.85rem;
-      text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0;
     }
     td:first-child { font-weight: 600; }
     .check { color: var(--green); }
     .cross { color: #f85149; }
 
-    /* Features grid */
     .features-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -185,7 +176,6 @@
     }
     .feature-card p { color: var(--muted); font-size: 0.95rem; }
 
-    /* Footer */
     footer {
       text-align: center;
       padding: 40px 0;
@@ -199,208 +189,201 @@
 <body>
   <div class="container">
 
-    <!-- Hero -->
     <section class="hero">
       <h1>Master Orchestrator</h1>
-      <p>Let Claude Code and Codex collaborate on your large-scale coding tasks. Decompose goals into DAGs, execute in parallel, converge on verified results.</p>
+      <p>让 Claude Code 和 Codex 协作处理大型编码任务。自动把目标拆成 DAG，跨 Agent 并行执行，并收敛到可验证结果。</p>
       <div class="hero-buttons">
-        <a href="https://github.com/amber132/Master-Orchestrator" class="btn btn-primary">View on GitHub</a>
-        <a href="https://github.com/amber132/Master-Orchestrator/blob/main/USAGE.md" class="btn btn-secondary">Documentation</a>
+        <a href="https://github.com/amber132/Master-Orchestrator" class="btn btn-primary">查看 GitHub 仓库</a>
+        <a href="https://github.com/amber132/Master-Orchestrator/blob/main/USAGE.md" class="btn btn-secondary">阅读文档</a>
       </div>
     </section>
 
-    <!-- Problem -->
     <section class="section">
-      <h2>The Problem with Single-Agent Coding</h2>
-      <p class="subtitle">Large tasks break single AI sessions. You end up manually stitching results together.</p>
+      <h2>单 Agent 编码的瓶颈</h2>
+      <p class="subtitle">大型任务会压垮单次 AI 会话，最后往往变成人工拼接多个结果。</p>
       <div class="two-col">
         <div class="card">
           <div class="emoji">&#x1F6A8;</div>
-          <h3>Context Overflow</h3>
-          <p>Refactoring 15 files? A single agent loses track of changes made earlier. Inconsistent edits, missed dependencies, broken imports.</p>
+          <h3>上下文溢出</h3>
+          <p>重构 15 个文件时，单 Agent 很容易忘掉前面改过什么，导致 import 不一致、接口不匹配、依赖遗漏。</p>
         </div>
         <div class="card">
           <div class="emoji">&#x1F504;</div>
-          <h3>No Parallelism</h3>
-          <p>Independent tasks run sequentially. 100 file fixes that could take 2 minutes instead take 30. No retry on transient failures.</p>
+          <h3>缺少并行能力</h3>
+          <p>独立任务只能串行跑。100 个文件的小修复本来可以几分钟完成，却会被拖成几十分钟。</p>
         </div>
         <div class="card">
           <div class="emoji">&#x1F914;</div>
-          <h3>Wrong Tool for the Job</h3>
-          <p>Planning needs reasoning. Execution needs speed. Using one model for everything means compromising on both.</p>
+          <h3>工具不匹配</h3>
+          <p>规划需要推理能力，执行需要吞吐和稳定性。让同一个模型包揽所有阶段，效果通常会打折。</p>
         </div>
         <div class="card">
           <div class="emoji">&#x1F500;</div>
-          <h3>Manual Coordination</h3>
-          <p>You become the orchestrator — running agents, checking outputs, feeding results to the next step. That's not automation.</p>
+          <h3>人工协调成本高</h3>
+          <p>你需要自己启动多个 Agent、检查输出、传递上下文、处理失败。这不是真正的自动化。</p>
         </div>
       </div>
     </section>
 
-    <!-- Solution -->
     <section class="section">
-      <h2>How Master Orchestrator Solves This</h2>
-      <p class="subtitle">One command. Automatic decomposition, parallel execution, cross-agent verification.</p>
+      <h2>Master Orchestrator 如何解决</h2>
+      <p class="subtitle">一个命令完成目标分解、并行执行、交叉验证和结果收敛。</p>
 
       <div class="flow">
         <div class="flow-step">
-          <div class="step-label">Input</div>
-          <div class="step-name">Your Goal</div>
-          <div class="step-provider">Natural language</div>
+          <div class="step-label">输入</div>
+          <div class="step-name">你的目标</div>
+          <div class="step-provider">自然语言</div>
         </div>
         <div class="flow-arrow">&#x2192;</div>
         <div class="flow-step">
-          <div class="step-label">Phase 1</div>
-          <div class="step-name">Decompose</div>
+          <div class="step-label">阶段 1</div>
+          <div class="step-name">分解</div>
           <div class="step-provider provider-claude">Claude</div>
         </div>
         <div class="flow-arrow">&#x2192;</div>
         <div class="flow-step">
-          <div class="step-label">Phase 2</div>
-          <div class="step-name">Execute</div>
-          <div class="step-provider provider-codex">Codex (parallel)</div>
+          <div class="step-label">阶段 2</div>
+          <div class="step-name">执行</div>
+          <div class="step-provider provider-codex">Codex 并行</div>
         </div>
         <div class="flow-arrow">&#x2192;</div>
         <div class="flow-step">
-          <div class="step-label">Phase 3</div>
-          <div class="step-name">Review</div>
+          <div class="step-label">阶段 3</div>
+          <div class="step-name">审查</div>
           <div class="step-provider provider-claude">Claude</div>
         </div>
         <div class="flow-arrow">&#x2192;</div>
         <div class="flow-step">
-          <div class="step-label">Output</div>
-          <div class="step-name">Verified</div>
-          <div class="step-provider">Tested &amp; merged</div>
+          <div class="step-label">输出</div>
+          <div class="step-name">已验证</div>
+          <div class="step-provider">测试与合并</div>
         </div>
       </div>
 
       <div class="code-block">
         <code>
-          <span class="comment"># One command replaces hours of manual coordination</span><br>
-          $ mo do "Add JWT auth with middleware, routes, tests, and docs"<br><br>
-          <span class="comment"># Decomposing goal into 6 tasks...</span><br>
-          <span class="comment"># Task 1: auth-middleware (claude) ─── running</span><br>
-          <span class="comment"># Task 2: token-utils (codex) ─── running</span><br>
-          <span class="comment"># Task 3: auth-routes (codex) ─── waiting [depends: 1,2]</span><br>
-          <span class="comment"># Task 4: auth-tests (codex) ─── waiting [depends: 1,3]</span><br>
-          <span class="comment"># Task 5: api-docs (codex) ─── waiting [depends: 3]</span><br>
-          <span class="comment"># Task 6: integration-review (claude) ─── waiting [depends: 4,5]</span><br><br>
-          <span class="comment"># All 6 tasks completed. 0 failures. Duration: 4m 23s</span>
+          <span class="comment"># 一个命令替代反复手工调度</span><br>
+          $ mo do "添加 JWT 鉴权，包括中间件、路由、测试和文档"<br><br>
+          <span class="comment"># 正在把目标分解为 6 个任务...</span><br>
+          <span class="comment"># 任务 1: auth-middleware (claude) - running</span><br>
+          <span class="comment"># 任务 2: token-utils (codex) - running</span><br>
+          <span class="comment"># 任务 3: auth-routes (codex) - waiting [depends: 1,2]</span><br>
+          <span class="comment"># 任务 4: auth-tests (codex) - waiting [depends: 1,3]</span><br>
+          <span class="comment"># 任务 5: api-docs (codex) - waiting [depends: 3]</span><br>
+          <span class="comment"># 任务 6: integration-review (claude) - waiting [depends: 4,5]</span><br><br>
+          <span class="comment"># 6 个任务全部完成，失败 0 个，用时 4 分 23 秒</span>
         </code>
       </div>
     </section>
 
-    <!-- Comparison -->
     <section class="section">
-      <h2>Single Agent vs. Master Orchestrator</h2>
+      <h2>单 Agent 对比 Master Orchestrator</h2>
       <table>
         <thead>
           <tr>
-            <th>Capability</th>
-            <th>Single Agent</th>
+            <th>能力</th>
+            <th>单 Agent</th>
             <th>Master Orchestrator</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td>Multi-file refactoring</td>
-            <td class="cross">Context overflow, inconsistent</td>
-            <td class="check">DAG decomposition, parallel</td>
+            <td>多文件重构</td>
+            <td class="cross">上下文溢出，改动不一致</td>
+            <td class="check">DAG 分解，并行执行</td>
           </tr>
           <tr>
-            <td>Bulk operations (100+ files)</td>
-            <td class="cross">Sequential, no retry</td>
-            <td class="check">16 parallel workers, auto-retry</td>
+            <td>100+ 文件批量操作</td>
+            <td class="cross">串行执行，失败靠手工重跑</td>
+            <td class="check">16 并发 worker，自动重试</td>
           </tr>
           <tr>
-            <td>Error recovery</td>
-            <td class="cross">Manual restart</td>
-            <td class="check">Classification, backoff, fallback</td>
+            <td>错误恢复</td>
+            <td class="cross">人工重启</td>
+            <td class="check">错误分类、退避、降级</td>
           </tr>
           <tr>
-            <td>Provider flexibility</td>
-            <td class="cross">Stuck with one model</td>
-            <td class="check">Mix Claude + Codex per phase</td>
+            <td>Provider 灵活性</td>
+            <td class="cross">只能绑定一个模型</td>
+            <td class="check">按阶段混用 Claude 和 Codex</td>
           </tr>
           <tr>
-            <td>Convergence detection</td>
-            <td class="cross">None</td>
-            <td class="check">Plateau, regression, deterioration</td>
+            <td>收敛检测</td>
+            <td class="cross">缺失</td>
+            <td class="check">检测停滞、回归和质量劣化</td>
           </tr>
           <tr>
-            <td>Crash recovery</td>
-            <td class="cross">Start over</td>
-            <td class="check">Checkpoint + resume</td>
+            <td>崩溃恢复</td>
+            <td class="cross">从头再来</td>
+            <td class="check">检查点和 resume</td>
           </tr>
         </tbody>
       </table>
     </section>
 
-    <!-- Features -->
     <section class="section">
-      <h2>Key Features</h2>
+      <h2>核心能力</h2>
       <div class="features-grid">
         <div class="feature-card">
-          <h4>DAG Decomposition</h4>
-          <p>Goals are automatically broken into dependent sub-tasks. Independent tasks run in parallel.</p>
+          <h4>DAG 任务分解</h4>
+          <p>自动把目标拆成有依赖关系的子任务，没有依赖冲突的任务会并行执行。</p>
         </div>
         <div class="feature-card">
-          <h4>Provider Routing</h4>
-          <p>Route each phase to the best AI agent. Claude for reasoning, Codex for code generation.</p>
+          <h4>Provider 路由</h4>
+          <p>按阶段选择最合适的 AI Agent：Claude 做推理规划，Codex 做代码执行。</p>
         </div>
         <div class="feature-card">
-          <h4>Simple Mode</h4>
-          <p>High-throughput bulk execution with 16 parallel workers, auto-retry, and syntax validation.</p>
+          <h4>Simple 模式</h4>
+          <p>面向批量小任务的高吞吐执行，支持 16 并发 worker、自动重试和语法验证。</p>
         </div>
         <div class="feature-card">
-          <h4>Error Intelligence</h4>
-          <p>Classifies errors (rate limit, context overflow, transient) and applies the right recovery strategy.</p>
+          <h4>错误识别</h4>
+          <p>识别限流、上下文溢出、临时失败等类型，并应用对应恢复策略。</p>
         </div>
         <div class="feature-card">
-          <h4>Convergence Detection</h4>
-          <p>Monitors for plateaus, regressions, and quality deterioration. Automatically escalates or rolls back.</p>
+          <h4>收敛检测</h4>
+          <p>监控停滞、回归和质量劣化，必要时升级策略或回滚到稳定状态。</p>
         </div>
         <div class="feature-card">
-          <h4>Crash Recovery</h4>
-          <p>SQLite-backed checkpoints. Resume any interrupted run from where it left off.</p>
+          <h4>崩溃恢复</h4>
+          <p>使用 SQLite 保存检查点，中断后可以从上次进度继续。</p>
         </div>
         <div class="feature-card">
-          <h4>Budget Control</h4>
-          <p>Per-provider budget limits with accounting mode. Never exceed your spend ceiling.</p>
+          <h4>预算控制</h4>
+          <p>按 provider 设置预算上限，并通过 accounting 模式记录消耗。</p>
         </div>
         <div class="feature-card">
-          <h4>Self-Improvement</h4>
-          <p>The orchestrator can analyze its own runs and propose improvements to your workflow.</p>
+          <h4>自我改进</h4>
+          <p>可以分析自己的运行记录，并为项目工作流提出改进建议。</p>
         </div>
         <div class="feature-card">
-          <h4>Extensible Config</h4>
-          <p>TOML-based configuration for providers, routing, retry policies, and validation rules.</p>
+          <h4>可扩展配置</h4>
+          <p>基于 TOML 配置 provider、路由、重试策略和验证规则。</p>
         </div>
       </div>
     </section>
 
-    <!-- Quick Start -->
     <section class="section">
-      <h2>Get Started in 30 Seconds</h2>
+      <h2>30 秒上手</h2>
       <div class="code-block">
         <code>
-          <span class="comment"># Install</span><br>
+          <span class="comment"># 安装</span><br>
           $ git clone https://github.com/amber132/Master-Orchestrator.git<br>
           $ cd Master-Orchestrator<br>
           $ pip install -e ".[dev]"<br><br>
-          <span class="comment"># Run your first orchestrated task</span><br>
-          $ mo do "Add input validation to all POST endpoints"
+          <span class="comment"># 运行第一个编排任务</span><br>
+          $ mo do "给所有 POST 接口补充输入校验"
         </code>
       </div>
     </section>
 
-    <!-- Footer -->
     <footer>
-      <p>Master Orchestrator is open source under the <a href="https://github.com/amber132/Master-Orchestrator/blob/main/LICENSE">MIT License</a>.</p>
+      <p>Master Orchestrator 基于 <a href="https://github.com/amber132/Master-Orchestrator/blob/main/LICENSE">MIT License</a> 开源。</p>
       <p style="margin-top: 8px;">
         <a href="https://github.com/amber132/Master-Orchestrator">GitHub</a> &middot;
-        <a href="https://github.com/amber132/Master-Orchestrator/blob/main/USAGE.md">Docs</a> &middot;
-        <a href="https://github.com/amber132/Master-Orchestrator/blob/main/CONTRIBUTING.md">Contributing</a>
+        <a href="https://github.com/amber132/Master-Orchestrator/blob/main/USAGE.md">文档</a> &middot;
+        <a href="https://github.com/amber132/Master-Orchestrator/blob/main/CONTRIBUTING.md">参与贡献</a>
       </p>
     </footer>
 
